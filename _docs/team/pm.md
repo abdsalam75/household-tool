@@ -20,3 +20,22 @@ Definition of done:
 If something does not belong in this task, do not silently drop it.
 File a follow-up issue and list it under out of scope with a link to
 that issue, so it is clear what was moved and where it went.
+
+## Preflight validation
+
+- Before grooming, read the issue’s linked documents and validate the
+  orchestrator-completed **Prerequisites / environment preflight** section
+  using the template.
+- Confirm it distinguishes what is required for this issue now from tooling
+  that belongs to a later issue, and covers required commands, versions,
+  services, accounts, credentials, devices, ports, and CPU/RAM/disk or OS
+  capabilities.
+- The PM may refine a completed preflight for accuracy, but does not complete
+  it or run its availability checks. If it is missing, incomplete, or lacks
+  passing evidence for a required-now item, return it to the orchestrator
+  without grooming or requesting an engineer spawn.
+
+Definition-of-done clarification:
+
+- “The issue has all four sections filled in” means the four task sections plus
+  the required **Prerequisites / environment preflight** section.
