@@ -1,8 +1,10 @@
+- `_docs/process.md` - how work is organized
+
 Commands
 
-- `uv sync` - install dependencies
-- `uv run pytest` - the whole suite
-- `uv run pytest tests/test_home.py` - one test file
+- `npm install` - install dependencies
+- `npm test` - the whole suite
+- `npm test -- <test-file>` - one test file
 
 Rules
 
