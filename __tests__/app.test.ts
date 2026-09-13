@@ -1,5 +1,5 @@
-describe('project setup', () => {
-  it('runs automated tests', () => {
+describe("project setup", () => {
+  it("runs automated tests", () => {
     expect(true).toBe(true);
   });
 });

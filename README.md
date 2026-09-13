@@ -23,6 +23,19 @@ Run the automated test suite:
 npm test
 ```
 
+## Validate changes
+
+Run all checks before contributing:
+
+```sh
+npm run typecheck
+npm run format:check
+npm run lint
+npm test
+```
+
+Use `npm run format` to apply the project's formatting rules.
+
 Start the development-build bundler:
 
 ```sh
