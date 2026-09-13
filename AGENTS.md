@@ -8,5 +8,7 @@ Commands
 
 Rules
 
-- Dependencies are added in `pyproject.toml`. Do not add one without
-  asking
+- Dependencies are added in `package.json`. Do not add one without asking.
+- Run Node.js and npm from Ubuntu/WSL, not from the Windows Node.js
+  installation. `command -v node` and `command -v npm` should resolve to
+  Linux paths rather than `/mnt/c/...`.

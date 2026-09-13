@@ -9,6 +9,21 @@ outside Expo Go.
 - Node.js 20.19+ or 22.12+
 - npm
 
+When using WSL, install and run Node.js and npm inside your Ubuntu
+distribution. Do not use a Windows Node.js installation through `/mnt/c`:
+it cannot reliably use a repository path in the Linux filesystem. Confirm the
+tools are native to WSL before installing dependencies:
+
+```sh
+command -v node
+command -v npm
+node --version
+npm --version
+```
+
+The first two commands should report Linux paths (for example, `/usr/bin/node`
+or a path under your WSL home directory), not `/mnt/c/...`.
+
 ## Local development
 
 Install dependencies from a clean checkout:
