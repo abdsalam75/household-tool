@@ -3,6 +3,9 @@
 Commands
 
 - `npm install` - install dependencies
+- `npm run typecheck` - check TypeScript types
+- `npm run format:check` - check formatting
+- `npm run lint` - check JavaScript and TypeScript lint rules
 - `npm test` - the whole suite
 - `npm test -- <test-file>` - one test file
 
