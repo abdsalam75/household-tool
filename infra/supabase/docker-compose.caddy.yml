@@ -1,0 +1,28 @@
+services:
+  # This production-boundary overlay removes direct gateway exposure.
+  api-gw:
+    ports: !reset []
+  supavisor:
+    ports: !reset []
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    depends_on:
+      api-gw:
+        condition: service_healthy
+    volumes:
+      - ./volumes/proxy/caddy:/etc/caddy:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    healthcheck:
+      test: ["CMD", "caddy", "version"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+volumes:
+  caddy_data: {}
+  caddy_config: {}

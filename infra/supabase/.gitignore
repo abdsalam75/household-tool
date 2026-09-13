@@ -1,0 +1,2 @@
+# Operator-created local and production environments must never be committed.
+.env

@@ -1,0 +1,5 @@
+# Local development proxy. In production replace `http://` with the real
+# domain: Caddy will terminate TLS and redirect HTTP to HTTPS automatically.
+http:// {
+  reverse_proxy api-gw:8000
+}

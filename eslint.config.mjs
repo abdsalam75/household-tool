@@ -4,7 +4,12 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["node_modules/", ".expo/", "coverage/"],
+    ignores: [
+      "node_modules/",
+      ".expo/",
+      "coverage/",
+      "infra/supabase/volumes/functions/",
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
