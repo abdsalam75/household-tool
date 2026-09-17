@@ -7,6 +7,8 @@ services:
   caddy:
     image: caddy:2.10.2-alpine
     restart: unless-stopped
+    environment:
+      PROXY_DOMAIN: ${PROXY_DOMAIN}
     ports:
       - "80:80"
       - "443:443"

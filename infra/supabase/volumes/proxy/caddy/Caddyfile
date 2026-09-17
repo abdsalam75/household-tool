@@ -1,5 +1,5 @@
-# Local development proxy. In production replace `http://` with the real
-# domain: Caddy will terminate TLS and redirect HTTP to HTTPS automatically.
-http:// {
+# The local environment generator uses localhost. Production supplies the real
+# public hostname outside Git. Caddy manages TLS and redirects HTTP to HTTPS.
+{$PROXY_DOMAIN:localhost} {
   reverse_proxy api-gw:8000
 }
