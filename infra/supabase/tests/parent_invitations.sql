@@ -172,7 +172,11 @@ WHERE account_id = '20000000-0000-0000-0000-000000000006';
 BEGIN;
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub = '20000000-0000-0000-0000-000000000001';
-SELECT * FROM public.create_parent_invitation();
+DO $$
+BEGIN
+  PERFORM * FROM public.create_parent_invitation();
+END;
+$$;
 COMMIT;
 
 UPDATE public.parent_invitations
@@ -195,7 +199,11 @@ WHERE household_id = 'b0000000-0000-0000-0000-000000000001';
 BEGIN;
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub = '20000000-0000-0000-0000-000000000001';
-SELECT * FROM public.create_parent_invitation();
+DO $$
+BEGIN
+  PERFORM * FROM public.create_parent_invitation();
+END;
+$$;
 COMMIT;
 
 UPDATE public.parent_invitations
