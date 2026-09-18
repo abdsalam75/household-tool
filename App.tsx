@@ -8,16 +8,31 @@ import {
 } from "./src/auth/ParentAuthView";
 import { createParentAuthService } from "./src/auth/createParentAuthService";
 import type { AuthAction, ParentAuthService, Provider } from "./src/auth/types";
+import { createHouseholdService } from "./src/household/createHouseholdService";
+import { HouseholdFlow } from "./src/household/HouseholdFlow";
+import type { HouseholdService } from "./src/household/types";
 
 type AppProps = {
   service?: ParentAuthService;
+  householdService?: HouseholdService;
 };
 
-export function ParentAuthApp({ service: injectedService }: AppProps) {
+export function ParentAuthApp({
+  service: injectedService,
+  householdService: injectedHouseholdService,
+}: AppProps) {
   const [service] = useState<ParentAuthService | null>(() => {
     if (injectedService) return injectedService;
     try {
       return createParentAuthService();
+    } catch {
+      return null;
+    }
+  });
+  const [householdService] = useState<HouseholdService | null>(() => {
+    if (injectedHouseholdService) return injectedHouseholdService;
+    try {
+      return createHouseholdService();
     } catch {
       return null;
     }
@@ -145,6 +160,17 @@ export function ParentAuthApp({ service: injectedService }: AppProps) {
       updateState({ type: "SIGNED_OUT", message: result.message });
     });
   }, [begin, service, updateState]);
+
+  if (state.phase === "signedIn" && state.account && householdService) {
+    return (
+      <HouseholdFlow
+        account={state.account}
+        onSignOut={signOut}
+        service={householdService}
+        signingOut={state.action === "signout"}
+      />
+    );
+  }
 
   return (
     <ParentAuthView

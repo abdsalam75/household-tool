@@ -10,6 +10,7 @@ describe("Supabase database migrations", () => {
     expect(migrations).toEqual([
       "20260918000000_create_app_private_schema.sql",
       "20260918070000_create_households_and_members.sql",
+      "20260918193000_add_household_setup_and_settings.sql",
     ]);
     for (const migration of migrations) {
       expect(migration).toMatch(/^\d{14}_[a-z0-9]+(?:_[a-z0-9]+)*\.sql$/);
@@ -32,6 +33,16 @@ describe("Supabase database migrations", () => {
     expect(householdFoundation).toContain("CREATE TABLE public.members");
     expect(householdFoundation).toContain("ENABLE ROW LEVEL SECURITY");
     expect(householdFoundation).toContain("auth.uid()");
+
+    const householdSetup = readFileSync(
+      `${migrationDirectory}/${migrations[2]}`,
+      "utf8",
+    );
+    expect(householdSetup).toContain("CREATE FUNCTION public.setup_household");
+    expect(householdSetup).toContain(
+      "CREATE FUNCTION public.update_household_timezone",
+    );
+    expect(householdSetup).toContain("pg_advisory_xact_lock");
   });
 
   it("uses the in-container client and applies migration plus history atomically", () => {

@@ -34,6 +34,35 @@ trap cleanup EXIT
 "${compose[@]}" up -d --wait db
 COMPOSE_PROJECT_NAME="$project_name" "${repo_root}/scripts/apply-supabase-migrations.sh"
 "${psql[@]}" <"${repo_root}/infra/supabase/tests/households_members.sql"
+"${psql[@]}" <"${repo_root}/infra/supabase/tests/household_setup_settings.sql"
+
+setup_first_output="${temporary_directory}/first-setup-attempt.log"
+setup_second_output="${temporary_directory}/second-setup-attempt.log"
+setup_command="BEGIN; SET LOCAL ROLE authenticated; SET LOCAL request.jwt.claim.sub = '30000000-0000-0000-0000-000000000005'; SET LOCAL request.jwt.claims = '{\"sub\":\"30000000-0000-0000-0000-000000000005\",\"email\":\"concurrent@example.test\",\"role\":\"authenticated\"}'; SELECT * FROM public.setup_household('Africa/Lagos'); SELECT pg_sleep(1); COMMIT;"
+
+set +e
+"${psql[@]}" --command "$setup_command" >"$setup_first_output" 2>&1 &
+setup_first_pid=$!
+"${psql[@]}" --command "$setup_command" >"$setup_second_output" 2>&1 &
+setup_second_pid=$!
+wait "$setup_first_pid"
+setup_first_status=$?
+wait "$setup_second_pid"
+setup_second_status=$?
+set -e
+
+if [[ "$setup_first_status" -ne 0 || "$setup_second_status" -ne 0 ]]; then
+  echo "error: concurrent setup retries did not both return successfully" >&2
+  sed -n '1,120p' "$setup_first_output" >&2
+  sed -n '1,120p' "$setup_second_output" >&2
+  exit 1
+fi
+
+setup_counts="$("${psql[@]}" --tuples-only --no-align --command "SELECT (SELECT count(*) FROM public.households WHERE creator_account_id = '30000000-0000-0000-0000-000000000005') || ':' || (SELECT count(*) FROM public.members WHERE account_id = '30000000-0000-0000-0000-000000000005');")"
+if [[ "$setup_counts" != "1:1" ]]; then
+  echo "error: concurrent setup created unexpected household/member counts: $setup_counts" >&2
+  exit 1
+fi
 
 first_output="${temporary_directory}/first-parent-attempt.log"
 second_output="${temporary_directory}/second-parent-attempt.log"
@@ -71,4 +100,5 @@ fi
 
 COMPOSE_PROJECT_NAME="$project_name" "${repo_root}/scripts/apply-supabase-migrations.sh"
 echo "Concurrent active-parent limit passed."
+echo "Concurrent household setup retry passed."
 echo "Household/member disposable database verification passed."

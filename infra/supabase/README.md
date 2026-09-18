@@ -172,12 +172,12 @@ or equal to `created_at`.
 
 RLS derives access only from `auth.uid()` and active membership:
 
-| Caller | Household rows | Member rows |
-| --- | --- | --- |
-| Active parent | Own household | Every member in own household |
-| Active child | None | Own active child membership only |
-| Inactive-only account | None | None |
-| Anonymous | None | None |
+| Caller                | Household rows | Member rows                      |
+| --------------------- | -------------- | -------------------------------- |
+| Active parent         | Own household  | Every member in own household    |
+| Active child          | None           | Own active child membership only |
+| Inactive-only account | None           | None                             |
+| Anonymous             | None           | None                             |
 
 Supplying another household or member ID does not grant access. `anon` and
 `authenticated` have SELECT only; direct inserts, updates, and deletes are
@@ -204,6 +204,12 @@ the disposable volumes when it exits:
 docker compose --env-file infra/supabase/.env -f infra/supabase/docker-compose.yml -f infra/supabase/docker-compose.caddy.yml down
 COMPOSE_PROJECT_NAME=household-foundation-check ./scripts/test-household-database.sh
 ```
+
+Household creation and time-zone settings build on this foundation through
+authenticated RPCs. Their mobile behavior, accepted zone format,
+authorization model, scheduling input, fallback, and exact verification steps
+are documented in
+[`docs/household-setup-settings.md`](../../docs/household-setup-settings.md).
 
 ### Fresh disposable verification
 
