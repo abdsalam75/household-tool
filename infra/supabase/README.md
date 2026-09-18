@@ -139,6 +139,56 @@ If an applied file changed or disappeared, it exits with an immutability error
 and does not run later migrations. Restore the applied file exactly; never
 rewrite migration history.
 
+## Household and membership foundation
+
+`public.households` stores the generated household UUID, a validated named IANA
+time zone, the Auth account that created the row, and managed creation/update
+timestamps. `public.members` stores a generated member UUID, its required
+household, an optional Auth account for an unactivated child, display name,
+`parent`/`child` role, active state, and managed timestamps.
+
+The database rejects unknown time zones, missing Auth references, parents
+without accounts, duplicate non-null account membership within a household,
+and more than two active parents. Active-parent checks lock the household row,
+so competing inserts or activations cannot both pass. An inactive parent can
+be replaced. Update triggers always move `updated_at` to a value greater than
+or equal to `created_at`.
+
+RLS derives access only from `auth.uid()` and active membership:
+
+| Caller | Household rows | Member rows |
+| --- | --- | --- |
+| Active parent | Own household | Every member in own household |
+| Active child | None | Own active child membership only |
+| Inactive-only account | None | None |
+| Anonymous | None | None |
+
+Supplying another household or member ID does not grant access. `anon` and
+`authenticated` have SELECT only; direct inserts, updates, and deletes are
+intentionally denied until later server-side operations own those mutations.
+The RLS helper is in `app_private`, reports only whether the current Auth
+account is an active parent of the tested household, and is executable only by
+`authenticated`.
+
+Apply the migrations to a running database with:
+
+```sh
+./scripts/apply-supabase-migrations.sh
+```
+
+Run the focused verification from a fresh, explicitly named disposable local
+Compose project. Stop the normal stack first because the upstream topology
+uses fixed container names. The verifier deletes only the
+`household-foundation-check` project's volumes, applies every migration, uses
+Auth identities in two households, checks the schema constraints and complete
+RLS matrix, races two parent inserts, checks migration idempotence, and removes
+the disposable volumes when it exits:
+
+```sh
+docker compose --env-file infra/supabase/.env -f infra/supabase/docker-compose.yml -f infra/supabase/docker-compose.caddy.yml down
+COMPOSE_PROJECT_NAME=household-foundation-check ./scripts/test-household-database.sh
+```
+
 ### Fresh disposable verification
 
 Use an isolated Compose project to repeat the complete check without touching
