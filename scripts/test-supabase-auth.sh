@@ -61,6 +61,11 @@ const expected = value => value === "true";
 NODE
 }
 
+restart_auth() {
+  COMPOSE_PROJECT_NAME="$project_name" "${compose[@]}" config --quiet
+  COMPOSE_PROJECT_NAME="$project_name" "${compose[@]}" up -d --wait --force-recreate auth >/dev/null
+}
+
 ./scripts/create-supabase-env.sh "$environment_file" >/dev/null
 set_environment_values \
   "API_EXTERNAL_URL=http://127.0.0.1:${auth_port}/auth/v1" \
@@ -74,20 +79,42 @@ COMPOSE_PROJECT_NAME="$project_name" "${compose[@]}" up -d --wait db auth >/dev/
 assert_settings false false false
 echo "PASS normal settings: email enabled; phone, anonymous, Google, and Apple disabled; auto-confirm disabled"
 
+# Requested flags alone must never expose a provider when credentials are
+# absent. This is the live regression case from the first QA pass.
+set_environment_values \
+  "GOOGLE_ENABLED=true" \
+  "APPLE_ENABLED=true"
+restart_auth
+assert_settings false false false
+echo "PASS credential gate: enabled flags with empty credentials keep Google and Apple disabled"
+
+# Prove the providers are gated independently rather than coupled together.
+set_environment_values \
+  "GOOGLE_CLIENT_ID=disposable-google-client.apps.invalid" \
+  "GOOGLE_SECRET=disposable-google-secret"
+restart_auth
+assert_settings true false false
+echo "PASS credential gate: complete Google credentials enable only Google"
+
+set_environment_values \
+  "GOOGLE_CLIENT_ID=" \
+  "GOOGLE_SECRET=" \
+  "APPLE_CLIENT_ID=com.invalid.household.web,com.invalid.household" \
+  "APPLE_SECRET=disposable-apple-secret" \
+  "APPLE_BUNDLE_ID=com.invalid.household"
+restart_auth
+assert_settings false true false
+echo "PASS credential gate: complete Apple credentials enable only Apple"
+
 # Auto-confirm is deliberately enabled only in this disposable verification
 # environment so the backend test does not depend on a real SMTP account.
 set_environment_values \
   "ENABLE_EMAIL_AUTOCONFIRM=true" \
-  "GOOGLE_ENABLED=true" \
   "GOOGLE_CLIENT_ID=disposable-google-client.apps.invalid" \
   "GOOGLE_SECRET=disposable-google-secret" \
-  "APPLE_ENABLED=true" \
-  "APPLE_CLIENT_ID=com.invalid.household.web,com.invalid.household" \
-  "APPLE_SECRET=disposable-apple-secret" \
-  "APPLE_BUNDLE_ID=com.invalid.household"
+  "APPLE_CLIENT_ID=com.invalid.household.web,com.invalid.household"
 
-COMPOSE_PROJECT_NAME="$project_name" "${compose[@]}" config --quiet
-COMPOSE_PROJECT_NAME="$project_name" "${compose[@]}" up -d --wait --force-recreate auth >/dev/null
+restart_auth
 assert_settings true true true
 echo "PASS disposable settings: Google and Apple enabled only with runtime flags and placeholder credentials"
 

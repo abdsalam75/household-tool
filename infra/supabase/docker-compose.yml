@@ -108,6 +108,8 @@ services:
     container_name: supabase-auth
     image: supabase/gotrue:v2.196.0
     restart: unless-stopped
+    entrypoint: ["/bin/sh", "/usr/local/bin/household-auth-entrypoint.sh"]
+    command: ["auth"]
     healthcheck:
       test:
         [
@@ -125,6 +127,8 @@ services:
       db:
         # Disable this if you are using an external Postgres database
         condition: service_healthy
+    volumes:
+      - ./volumes/auth/entrypoint.sh:/usr/local/bin/household-auth-entrypoint.sh:ro
     environment:
       GOTRUE_API_HOST: 0.0.0.0
       GOTRUE_API_PORT: 9999
@@ -174,14 +178,16 @@ services:
       GOTRUE_EXTERNAL_PHONE_ENABLED: ${ENABLE_PHONE_SIGNUP}
       GOTRUE_SMS_AUTOCONFIRM: ${ENABLE_PHONE_AUTOCONFIRM}
 
-      # Parent OAuth providers. Defaults in .env.example keep both disabled;
-      # credentials are supplied only through ignored/runtime configuration.
-      GOTRUE_EXTERNAL_GOOGLE_ENABLED: ${GOOGLE_ENABLED:-false}
+      # The entrypoint derives each effective GOTRUE flag from the requested
+      # flag plus non-empty ID and secret, so incomplete configuration is safe.
+      HOUSEHOLD_GOOGLE_ENABLED: ${GOOGLE_ENABLED:-false}
+      GOTRUE_EXTERNAL_GOOGLE_ENABLED: "false"
       GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOTRUE_EXTERNAL_GOOGLE_SECRET: ${GOOGLE_SECRET:-}
       GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-${API_EXTERNAL_URL}/callback}
 
-      GOTRUE_EXTERNAL_APPLE_ENABLED: ${APPLE_ENABLED:-false}
+      HOUSEHOLD_APPLE_ENABLED: ${APPLE_ENABLED:-false}
+      GOTRUE_EXTERNAL_APPLE_ENABLED: "false"
       GOTRUE_EXTERNAL_APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
       GOTRUE_EXTERNAL_APPLE_SECRET: ${APPLE_SECRET:-}
       GOTRUE_EXTERNAL_APPLE_REDIRECT_URI: ${APPLE_REDIRECT_URI:-${API_EXTERNAL_URL}/callback}

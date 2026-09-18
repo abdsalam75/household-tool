@@ -13,6 +13,10 @@ Command: `./scripts/test-supabase-auth.sh`
 Only disposable placeholder provider values and randomly generated local
 credentials were used. Output was assertion-only; account credentials,
 provider secrets, and access/refresh tokens were not printed or retained.
+The runtime matrix also verified that requested provider flags with empty
+credentials leave both providers disabled, complete Google credentials enable
+only Google, complete Apple credentials enable only Apple, and complete
+credentials for both enable both.
 
 ## Email/password
 

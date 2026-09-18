@@ -25,6 +25,10 @@ same exact value; the focused verifier checks this invariant.
 For Apple, `APPLE_BUNDLE_ID` is passed to the pinned Auth image as
 `GOTRUE_EXTERNAL_IOS_BUNDLE_ID`. Set a social provider's enable flag to `true`
 only in the same runtime configuration that supplies its client ID and secret.
+The Auth entrypoint derives GoTrue's effective enable flag and forces it to
+`false` unless the requested flag is exactly `true` and both the provider client
+ID and secret are non-empty. An accidentally enabled but incomplete provider
+therefore remains disabled in `/settings`.
 
 The tracked template contains no usable credential. Generate an ignored local
 file with `./scripts/create-supabase-env.sh`; inject staging/production values

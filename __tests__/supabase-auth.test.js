@@ -12,11 +12,16 @@ describe("Supabase parent authentication configuration", () => {
     const requiredWiring = [
       "GOTRUE_EXTERNAL_EMAIL_ENABLED: ${ENABLE_EMAIL_SIGNUP}",
       "GOTRUE_MAILER_AUTOCONFIRM: ${ENABLE_EMAIL_AUTOCONFIRM}",
-      "GOTRUE_EXTERNAL_GOOGLE_ENABLED: ${GOOGLE_ENABLED:-false}",
+      'entrypoint: ["/bin/sh", "/usr/local/bin/household-auth-entrypoint.sh"]',
+      'command: ["auth"]',
+      "./volumes/auth/entrypoint.sh:/usr/local/bin/household-auth-entrypoint.sh:ro",
+      "HOUSEHOLD_GOOGLE_ENABLED: ${GOOGLE_ENABLED:-false}",
+      'GOTRUE_EXTERNAL_GOOGLE_ENABLED: "false"',
       "GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}",
       "GOTRUE_EXTERNAL_GOOGLE_SECRET: ${GOOGLE_SECRET:-}",
       "GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-${API_EXTERNAL_URL}/callback}",
-      "GOTRUE_EXTERNAL_APPLE_ENABLED: ${APPLE_ENABLED:-false}",
+      "HOUSEHOLD_APPLE_ENABLED: ${APPLE_ENABLED:-false}",
+      'GOTRUE_EXTERNAL_APPLE_ENABLED: "false"',
       "GOTRUE_EXTERNAL_APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}",
       "GOTRUE_EXTERNAL_APPLE_SECRET: ${APPLE_SECRET:-}",
       "GOTRUE_EXTERNAL_APPLE_REDIRECT_URI: ${APPLE_REDIRECT_URI:-${API_EXTERNAL_URL}/callback}",
@@ -74,11 +79,13 @@ describe("Supabase parent authentication configuration", () => {
         ),
       );
       const auth = resolved.services.auth.environment;
-      expect(auth.GOTRUE_EXTERNAL_GOOGLE_ENABLED).toBe("true");
+      expect(auth.HOUSEHOLD_GOOGLE_ENABLED).toBe("true");
+      expect(auth.GOTRUE_EXTERNAL_GOOGLE_ENABLED).toBe("false");
       expect(auth.GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID).toBe(
         "disposable-google-client.apps.invalid",
       );
-      expect(auth.GOTRUE_EXTERNAL_APPLE_ENABLED).toBe("true");
+      expect(auth.HOUSEHOLD_APPLE_ENABLED).toBe("true");
+      expect(auth.GOTRUE_EXTERNAL_APPLE_ENABLED).toBe("false");
       expect(auth.GOTRUE_EXTERNAL_APPLE_CLIENT_ID).toBe(
         "com.invalid.household.web,com.invalid.household.native",
       );
@@ -93,6 +100,43 @@ describe("Supabase parent authentication configuration", () => {
       );
     } finally {
       rmSync(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("enables each provider only when its flag, client ID, and secret exist", () => {
+    const entrypoint = "infra/supabase/volumes/auth/entrypoint.sh";
+    const cases = [
+      ["false", "", "", "false"],
+      ["true", "", "", "false"],
+      ["true", "client-id", "", "false"],
+      ["true", "", "client-secret", "false"],
+      ["false", "client-id", "client-secret", "false"],
+      ["true", "client-id", "client-secret", "true"],
+    ];
+
+    for (const [requested, clientId, secret, expected] of cases) {
+      execFileSync(
+        "sh",
+        [
+          entrypoint,
+          "sh",
+          "-c",
+          '[ "$GOTRUE_EXTERNAL_GOOGLE_ENABLED" = "$EXPECTED" ] && [ "$GOTRUE_EXTERNAL_APPLE_ENABLED" = "$EXPECTED" ]',
+        ],
+        {
+          env: {
+            PATH: process.env.PATH,
+            EXPECTED: expected,
+            HOUSEHOLD_GOOGLE_ENABLED: requested,
+            GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: clientId,
+            GOTRUE_EXTERNAL_GOOGLE_SECRET: secret,
+            HOUSEHOLD_APPLE_ENABLED: requested,
+            GOTRUE_EXTERNAL_APPLE_CLIENT_ID: clientId,
+            GOTRUE_EXTERNAL_APPLE_SECRET: secret,
+          },
+          stdio: "pipe",
+        },
+      );
     }
   });
 
@@ -123,6 +167,7 @@ describe("Supabase parent authentication configuration", () => {
       "infra/supabase/AUTH.md",
       "infra/supabase/auth-validation.md",
       "infra/supabase/docker-compose.auth-test.yml",
+      "infra/supabase/volumes/auth/entrypoint.sh",
       "scripts/check-real-auth-provider.sh",
       "scripts/test-supabase-auth.sh",
     ];
