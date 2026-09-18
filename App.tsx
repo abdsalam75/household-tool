@@ -9,17 +9,25 @@ import {
 import { createParentAuthService } from "./src/auth/createParentAuthService";
 import type { AuthAction, ParentAuthService, Provider } from "./src/auth/types";
 import { createHouseholdService } from "./src/household/createHouseholdService";
+import { createParentInvitationAcceptanceService } from "./src/household/createParentInvitationAcceptanceService";
 import { HouseholdFlow } from "./src/household/HouseholdFlow";
+import type { ParentInvitationAcceptanceServiceContract } from "./src/household/ParentInvitationAcceptanceService";
+import {
+  ParentInvitationAcceptanceView,
+  type InvitationAcceptancePhase,
+} from "./src/household/ParentInvitationAcceptanceView";
 import type { HouseholdService } from "./src/household/types";
 
 type AppProps = {
   service?: ParentAuthService;
   householdService?: HouseholdService;
+  invitationAcceptanceService?: ParentInvitationAcceptanceServiceContract;
 };
 
 export function ParentAuthApp({
   service: injectedService,
   householdService: injectedHouseholdService,
+  invitationAcceptanceService: injectedInvitationAcceptanceService,
 }: AppProps) {
   const [service] = useState<ParentAuthService | null>(() => {
     if (injectedService) return injectedService;
@@ -37,7 +45,19 @@ export function ParentAuthApp({
       return null;
     }
   });
+  const [invitationAcceptanceService] =
+    useState<ParentInvitationAcceptanceServiceContract | null>(() => {
+      if (injectedInvitationAcceptanceService)
+        return injectedInvitationAcceptanceService;
+      try {
+        return createParentInvitationAcceptanceService();
+      } catch {
+        return null;
+      }
+    });
   const [state, setState] = useState(initialAuthState);
+  const [invitationPhase, setInvitationPhase] =
+    useState<InvitationAcceptancePhase | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const actionRef = useRef<AuthAction | null>(null);
@@ -68,6 +88,17 @@ export function ParentAuthApp({
     [updateState],
   );
 
+  const captureInvitationUrl = useCallback(
+    async (url: string) => {
+      if (!invitationAcceptanceService) return "unrelated" as const;
+      const outcome = await invitationAcceptanceService.captureUrl(url);
+      if (outcome === "pending") setInvitationPhase("confirmation");
+      if (outcome === "invalid") setInvitationPhase("invalid");
+      return outcome;
+    },
+    [invitationAcceptanceService],
+  );
+
   useEffect(() => {
     if (!service) {
       updateState({
@@ -81,6 +112,14 @@ export function ParentAuthApp({
 
     const start = async () => {
       const initialUrl = await Linking.getInitialURL();
+      const linkOutcome = initialUrl
+        ? await captureInvitationUrl(initialUrl)
+        : "unrelated";
+      if (linkOutcome === "unrelated" && invitationAcceptanceService) {
+        const pending = await invitationAcceptanceService.loadPending();
+        if (pending === "pending") setInvitationPhase("confirmation");
+        if (pending === "invalid") setInvitationPhase("invalid");
+      }
       const result =
         initialUrl && service.isAuthCallback(initialUrl)
           ? await service.completeOAuthCallback(initialUrl)
@@ -107,22 +146,27 @@ export function ParentAuthApp({
     });
 
     const subscription = Linking.addEventListener("url", ({ url }) => {
-      if (
-        actionRef.current ||
-        authenticatedRef.current ||
-        !service.isAuthCallback(url)
-      )
+      if (service.isAuthCallback(url)) {
+        if (actionRef.current || authenticatedRef.current) return;
+        actionRef.current = "callback";
+        updateState({ type: "BEGIN", action: "callback" });
+        void finishAuthentication(() => service.completeOAuthCallback(url));
         return;
-      actionRef.current = "callback";
-      updateState({ type: "BEGIN", action: "callback" });
-      void finishAuthentication(() => service.completeOAuthCallback(url));
+      }
+      void captureInvitationUrl(url);
     });
 
     return () => {
       active = false;
       subscription.remove();
     };
-  }, [finishAuthentication, service, updateState]);
+  }, [
+    captureInvitationUrl,
+    finishAuthentication,
+    invitationAcceptanceService,
+    service,
+    updateState,
+  ]);
 
   const begin = useCallback(
     (action: AuthAction) => {
@@ -160,6 +204,37 @@ export function ParentAuthApp({
       updateState({ type: "SIGNED_OUT", message: result.message });
     });
   }, [begin, service, updateState]);
+
+  const acceptInvitation = useCallback(() => {
+    if (!invitationAcceptanceService || invitationPhase === "accepting") return;
+    setInvitationPhase("accepting");
+    void invitationAcceptanceService.accept().then((outcome) => {
+      setInvitationPhase(
+        outcome.status === "accepted" ? "success" : outcome.status,
+      );
+    });
+  }, [invitationAcceptanceService, invitationPhase]);
+
+  const cancelInvitation = useCallback(() => {
+    if (!invitationAcceptanceService) return;
+    void invitationAcceptanceService.cancel().then(() => {
+      setInvitationPhase("cancelled");
+    });
+  }, [invitationAcceptanceService]);
+
+  if (
+    invitationPhase &&
+    (invitationPhase !== "confirmation" || state.phase === "signedIn")
+  ) {
+    return (
+      <ParentInvitationAcceptanceView
+        onAccept={acceptInvitation}
+        onCancel={cancelInvitation}
+        onContinue={() => setInvitationPhase(null)}
+        phase={invitationPhase}
+      />
+    );
+  }
 
   if (state.phase === "signedIn" && state.account && householdService) {
     return (

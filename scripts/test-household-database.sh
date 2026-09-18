@@ -36,6 +36,45 @@ COMPOSE_PROJECT_NAME="$project_name" "${repo_root}/scripts/apply-supabase-migrat
 "${psql[@]}" <"${repo_root}/infra/supabase/tests/households_members.sql"
 "${psql[@]}" <"${repo_root}/infra/supabase/tests/household_setup_settings.sql"
 "${psql[@]}" <"${repo_root}/infra/supabase/tests/parent_invitations.sql"
+"${psql[@]}" <"${repo_root}/infra/supabase/tests/parent_invitation_acceptance.sql"
+
+"${psql[@]}" --command "INSERT INTO auth.users (id, email) VALUES ('40000000-0000-0000-0000-000000000009', 'concurrent-inviter@example.test'), ('40000000-0000-0000-0000-000000000010', 'concurrent-recipient@example.test'); INSERT INTO public.households (id, timezone, creator_account_id) VALUES ('d0000000-0000-0000-0000-000000000004', 'Africa/Lagos', '40000000-0000-0000-0000-000000000009'); INSERT INTO public.members (household_id, account_id, display_name, role) VALUES ('d0000000-0000-0000-0000-000000000004', '40000000-0000-0000-0000-000000000009', 'Concurrent inviter', 'parent'); INSERT INTO public.parent_invitations (household_id, token_digest, created_by, created_at, expires_at) VALUES ('d0000000-0000-0000-0000-000000000004', extensions.digest(repeat('i', 43), 'sha256'), '40000000-0000-0000-0000-000000000009', statement_timestamp(), statement_timestamp() + interval '24 hours');"
+
+acceptance_first_output="${temporary_directory}/first-acceptance-attempt.log"
+acceptance_second_output="${temporary_directory}/second-acceptance-attempt.log"
+acceptance_command="BEGIN; SET LOCAL ROLE authenticated; SET LOCAL request.jwt.claim.sub = '40000000-0000-0000-0000-000000000010'; SET LOCAL request.jwt.claims = '{\"sub\":\"40000000-0000-0000-0000-000000000010\",\"email\":\"concurrent-recipient@example.test\",\"role\":\"authenticated\"}'; SELECT invitation_status FROM public.accept_parent_invitation(repeat('i', 43)); SELECT pg_sleep(1); COMMIT;"
+
+set +e
+"${psql[@]}" --command "$acceptance_command" >"$acceptance_first_output" 2>&1 &
+acceptance_first_pid=$!
+"${psql[@]}" --command "$acceptance_command" >"$acceptance_second_output" 2>&1 &
+acceptance_second_pid=$!
+wait "$acceptance_first_pid"
+acceptance_first_status=$?
+wait "$acceptance_second_pid"
+acceptance_second_status=$?
+set -e
+
+if [[ "$acceptance_first_status" -ne 0 || "$acceptance_second_status" -ne 0 ]]; then
+  echo "error: concurrent invitation acceptance requests did not both return safely" >&2
+  sed -n '1,120p' "$acceptance_first_output" >&2
+  sed -n '1,120p' "$acceptance_second_output" >&2
+  exit 1
+fi
+
+acceptance_results="$(grep -h -E '^[[:space:]]*(accepted|consumed)[[:space:]]*$' "$acceptance_first_output" "$acceptance_second_output" | sed 's/[[:space:]]//g' | sort | paste -sd ':' -)"
+if [[ "$acceptance_results" != "accepted:consumed" ]]; then
+  echo "error: concurrent invitation acceptance did not produce one accepted and one consumed result" >&2
+  sed -n '1,120p' "$acceptance_first_output" >&2
+  sed -n '1,120p' "$acceptance_second_output" >&2
+  exit 1
+fi
+
+acceptance_counts="$("${psql[@]}" --tuples-only --no-align --command "SELECT (SELECT count(*) FROM public.members WHERE account_id = '40000000-0000-0000-0000-000000000010') || ':' || (SELECT count(*) FROM public.parent_invitations WHERE token_digest = extensions.digest(repeat('i', 43), 'sha256') AND used_at IS NOT NULL);")"
+if [[ "$acceptance_counts" != "1:1" ]]; then
+  echo "error: concurrent invitation acceptance created unexpected member/invitation counts: $acceptance_counts" >&2
+  exit 1
+fi
 
 setup_first_output="${temporary_directory}/first-setup-attempt.log"
 setup_second_output="${temporary_directory}/second-setup-attempt.log"
@@ -102,4 +141,5 @@ fi
 COMPOSE_PROJECT_NAME="$project_name" "${repo_root}/scripts/apply-supabase-migrations.sh"
 echo "Concurrent active-parent limit passed."
 echo "Concurrent household setup retry passed."
+echo "Concurrent parent invitation acceptance passed."
 echo "Household/member disposable database verification passed."
