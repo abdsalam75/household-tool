@@ -35,6 +35,7 @@ trap cleanup EXIT
 COMPOSE_PROJECT_NAME="$project_name" "${repo_root}/scripts/apply-supabase-migrations.sh"
 "${psql[@]}" <"${repo_root}/infra/supabase/tests/households_members.sql"
 "${psql[@]}" <"${repo_root}/infra/supabase/tests/household_setup_settings.sql"
+"${psql[@]}" <"${repo_root}/infra/supabase/tests/parent_invitations.sql"
 
 setup_first_output="${temporary_directory}/first-setup-attempt.log"
 setup_second_output="${temporary_directory}/second-setup-attempt.log"

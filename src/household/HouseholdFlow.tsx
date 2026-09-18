@@ -39,7 +39,32 @@ export function HouseholdFlow({
           accountLabel,
           timeZone: outcome.settings.timeZone,
           persistedTimeZone: outcome.settings.timeZone,
+          invitationPhase: "loading",
           action: null,
+        });
+        const invitationOutcome = await service.loadParentInvitation();
+        setState((current) => {
+          if (current.phase !== "settings") return current;
+          if (invitationOutcome.message)
+            return {
+              ...current,
+              invitationPhase: "error",
+              invitationMessage: invitationOutcome.message,
+            };
+          const invitation = invitationOutcome.invitation;
+          return {
+            ...current,
+            invitationPhase: invitation
+              ? invitation.status === "active"
+                ? invitation.url
+                  ? "success"
+                  : "activeUnavailable"
+                : invitation.status
+              : "idle",
+            invitationUrl: invitation?.url,
+            invitationExpiresAt: invitation?.expiresAt,
+            invitationMessage: undefined,
+          };
         });
       } else if (outcome.message) {
         setState({
@@ -66,6 +91,29 @@ export function HouseholdFlow({
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (state.invitationPhase !== "success" || !state.invitationExpiresAt)
+      return;
+    const remaining =
+      new Date(state.invitationExpiresAt).getTime() - Date.now();
+    if (remaining <= 0) {
+      setState((current) => ({
+        ...current,
+        invitationPhase: "expired",
+        invitationUrl: undefined,
+      }));
+      return;
+    }
+    const timer = setTimeout(() => {
+      setState((current) => ({
+        ...current,
+        invitationPhase: "expired",
+        invitationUrl: undefined,
+      }));
+    }, remaining);
+    return () => clearTimeout(timer);
+  }, [state.invitationExpiresAt, state.invitationPhase]);
 
   const changeTimeZone = useCallback((timeZone: string) => {
     setState((current) => ({
@@ -102,6 +150,7 @@ export function HouseholdFlow({
       timeZone: outcome.settings.timeZone,
       persistedTimeZone: outcome.settings.timeZone,
       success: "Household created.",
+      invitationPhase: "idle",
       action: null,
     });
   }, [accountLabel, service, state.timeZone]);
@@ -135,6 +184,56 @@ export function HouseholdFlow({
     }));
   }, [service, state.timeZone]);
 
+  const createInvitation = useCallback(async () => {
+    setState((current) => ({
+      ...current,
+      action: "createInvite",
+      invitationMessage: undefined,
+    }));
+    const outcome = await service.createParentInvitation();
+    if (!outcome.invitation) {
+      setState((current) => ({
+        ...current,
+        action: null,
+        invitationPhase: "error",
+        invitationMessage: outcome.message,
+      }));
+      return;
+    }
+    setState((current) => ({
+      ...current,
+      action: null,
+      invitationPhase: "success",
+      invitationUrl: outcome.invitation!.url,
+      invitationExpiresAt: outcome.invitation!.expiresAt,
+      invitationMessage: undefined,
+    }));
+  }, [service]);
+
+  const revokeInvitation = useCallback(async () => {
+    setState((current) => ({
+      ...current,
+      action: "revokeInvite",
+      invitationMessage: undefined,
+    }));
+    const outcome = await service.revokeParentInvitation();
+    if (!outcome.invitation) {
+      setState((current) => ({
+        ...current,
+        action: null,
+        invitationMessage: outcome.message,
+      }));
+      return;
+    }
+    setState((current) => ({
+      ...current,
+      action: null,
+      invitationPhase: "revoked",
+      invitationUrl: undefined,
+      invitationExpiresAt: outcome.invitation!.expiresAt,
+    }));
+  }, [service]);
+
   return (
     <HouseholdView
       onChangeTimeZone={changeTimeZone}
@@ -142,6 +241,8 @@ export function HouseholdFlow({
       onReload={() => void load(true)}
       onSave={() => void save()}
       onSignOut={onSignOut}
+      onCreateInvitation={() => void createInvitation()}
+      onRevokeInvitation={() => void revokeInvitation()}
       state={{ ...state, action: signingOut ? "signout" : state.action }}
     />
   );

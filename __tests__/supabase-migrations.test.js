@@ -11,6 +11,7 @@ describe("Supabase database migrations", () => {
       "20260918000000_create_app_private_schema.sql",
       "20260918070000_create_households_and_members.sql",
       "20260918193000_add_household_setup_and_settings.sql",
+      "20260918210000_add_parent_invitations.sql",
     ]);
     for (const migration of migrations) {
       expect(migration).toMatch(/^\d{14}_[a-z0-9]+(?:_[a-z0-9]+)*\.sql$/);
@@ -43,6 +44,19 @@ describe("Supabase database migrations", () => {
       "CREATE FUNCTION public.update_household_timezone",
     );
     expect(householdSetup).toContain("pg_advisory_xact_lock");
+
+    const parentInvitations = readFileSync(
+      `${migrationDirectory}/${migrations[3]}`,
+      "utf8",
+    );
+    expect(parentInvitations).toContain(
+      "CREATE FUNCTION public.create_parent_invitation",
+    );
+    expect(parentInvitations).toContain(
+      "extensions.digest(raw_token, 'sha256')",
+    );
+    expect(parentInvitations).toContain("interval '24 hours'");
+    expect(parentInvitations).not.toMatch(/household_id uuid\)/);
   });
 
   it("uses the in-container client and applies migration plus history atomically", () => {

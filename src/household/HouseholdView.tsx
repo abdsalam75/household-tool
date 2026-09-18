@@ -1,11 +1,14 @@
 import {
   ActivityIndicator,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
+
+import { encodeQr } from "./qrCode";
 
 export type HouseholdViewState = {
   phase: "loading" | "loadError" | "setup" | "settings";
@@ -15,7 +18,26 @@ export type HouseholdViewState = {
   fallbackMessage?: string;
   message?: string;
   success?: string;
-  action: "create" | "save" | "reload" | "signout" | null;
+  invitationPhase?:
+    | "idle"
+    | "loading"
+    | "success"
+    | "error"
+    | "activeUnavailable"
+    | "expired"
+    | "revoked"
+    | "consumed";
+  invitationUrl?: string;
+  invitationExpiresAt?: string;
+  invitationMessage?: string;
+  action:
+    | "create"
+    | "save"
+    | "reload"
+    | "signout"
+    | "createInvite"
+    | "revokeInvite"
+    | null;
 };
 
 type HouseholdViewProps = {
@@ -25,6 +47,8 @@ type HouseholdViewProps = {
   onReload: () => void;
   onSave: () => void;
   onSignOut: () => void;
+  onCreateInvitation: () => void;
+  onRevokeInvitation: () => void;
 };
 
 type ButtonProps = {
@@ -69,6 +93,28 @@ function Button({
   );
 }
 
+function InvitationQr({ url }: { url: string }) {
+  const matrix = encodeQr(url);
+  return (
+    <View
+      accessibilityLabel={`QR code containing ${url}`}
+      accessibilityRole="image"
+      style={styles.qrQuietZone}
+    >
+      {matrix.map((row, rowIndex) => (
+        <View key={rowIndex} style={styles.qrRow}>
+          {row.map((dark, columnIndex) => (
+            <View
+              key={columnIndex}
+              style={[styles.qrCell, dark && styles.qrDarkCell]}
+            />
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 export function HouseholdView({
   state,
   onChangeTimeZone,
@@ -76,6 +122,8 @@ export function HouseholdView({
   onReload,
   onSave,
   onSignOut,
+  onCreateInvitation,
+  onRevokeInvitation,
 }: HouseholdViewProps) {
   const busy = state.action !== null;
 
@@ -122,7 +170,10 @@ export function HouseholdView({
 
   const setup = state.phase === "setup";
   return (
-    <View style={styles.screen}>
+    <ScrollView
+      contentContainerStyle={styles.scrollScreen}
+      keyboardShouldPersistTaps="handled"
+    >
       <View style={styles.card}>
         <Text style={styles.eyebrow}>
           {setup ? "HOUSEHOLD SETUP" : "SETTINGS"}
@@ -168,6 +219,85 @@ export function HouseholdView({
           loadingLabel={setup ? "Creating household…" : "Saving…"}
           onPress={setup ? onCreate : onSave}
         />
+        {!setup ? (
+          <View style={styles.invitationSection}>
+            <Text accessibilityRole="header" style={styles.sectionTitle}>
+              Invite another parent
+            </Text>
+            {state.invitationPhase === "loading" ? (
+              <View style={styles.inlineStatus}>
+                <ActivityIndicator color="#345995" />
+                <Text style={styles.body}>Loading invitation…</Text>
+              </View>
+            ) : null}
+            {state.invitationPhase === "success" && state.invitationUrl ? (
+              <View style={styles.invitationResult}>
+                <InvitationQr url={state.invitationUrl} />
+                <Text selectable style={styles.invitationUrl}>
+                  {state.invitationUrl}
+                </Text>
+                <Text style={styles.body}>
+                  Expires {state.invitationExpiresAt}
+                </Text>
+                <Button
+                  disabled={busy}
+                  label="Revoke invitation"
+                  loading={state.action === "revokeInvite"}
+                  loadingLabel="Revoking…"
+                  onPress={onRevokeInvitation}
+                  secondary
+                />
+              </View>
+            ) : null}
+            {state.invitationPhase === "activeUnavailable" ? (
+              <View>
+                <Text style={styles.notice}>
+                  An active invitation already exists. Its secure link is not
+                  stored on the server. Revoke it before creating a new one.
+                </Text>
+                <Button
+                  disabled={busy}
+                  label="Revoke invitation"
+                  loading={state.action === "revokeInvite"}
+                  loadingLabel="Revoking…"
+                  onPress={onRevokeInvitation}
+                  secondary
+                />
+              </View>
+            ) : null}
+            {state.invitationPhase === "expired" ? (
+              <Text style={styles.notice}>
+                This invitation expired and is no longer shareable.
+              </Text>
+            ) : null}
+            {state.invitationPhase === "revoked" ? (
+              <Text style={styles.notice}>
+                This invitation was revoked and is no longer active.
+              </Text>
+            ) : null}
+            {state.invitationPhase === "consumed" ? (
+              <Text style={styles.notice}>
+                This invitation was already used and cannot be reused.
+              </Text>
+            ) : null}
+            {state.invitationMessage ? (
+              <Text accessibilityRole="alert" style={styles.error}>
+                {state.invitationMessage}
+              </Text>
+            ) : null}
+            {state.invitationPhase !== "loading" &&
+            state.invitationPhase !== "success" &&
+            state.invitationPhase !== "activeUnavailable" ? (
+              <Button
+                disabled={busy}
+                label="Create parent invitation"
+                loading={state.action === "createInvite"}
+                loadingLabel="Creating invitation…"
+                onPress={onCreateInvitation}
+              />
+            ) : null}
+          </View>
+        ) : null}
         <Button
           disabled={busy}
           label="Sign out"
@@ -177,7 +307,7 @@ export function HouseholdView({
           secondary
         />
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -185,6 +315,12 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: "#f4f1ea",
+    justifyContent: "center",
+    padding: 24,
+  },
+  scrollScreen: {
+    backgroundColor: "#f4f1ea",
+    flexGrow: 1,
     justifyContent: "center",
     padding: 24,
   },
@@ -197,6 +333,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1.4,
   },
   title: { color: "#152238", fontSize: 28, fontWeight: "700" },
+  sectionTitle: { color: "#152238", fontSize: 20, fontWeight: "700" },
   account: { color: "#152238", fontSize: 15, fontWeight: "600" },
   body: { color: "#4a5568", fontSize: 16, lineHeight: 23 },
   label: { color: "#344054", fontSize: 14, fontWeight: "600" },
@@ -231,4 +368,23 @@ const styles = StyleSheet.create({
   secondaryButtonText: { color: "#345995" },
   disabled: { opacity: 0.6 },
   pressed: { opacity: 0.85 },
+  invitationSection: {
+    borderTopColor: "#d8dee8",
+    borderTopWidth: 1,
+    gap: 12,
+    marginTop: 8,
+    paddingTop: 20,
+  },
+  invitationResult: { alignItems: "center", gap: 12 },
+  inlineStatus: { alignItems: "center", flexDirection: "row", gap: 8 },
+  invitationUrl: { color: "#152238", fontSize: 13, lineHeight: 18 },
+  qrQuietZone: {
+    aspectRatio: 1,
+    backgroundColor: "#fff",
+    padding: 12,
+    width: 220,
+  },
+  qrRow: { flex: 1, flexDirection: "row" },
+  qrCell: { backgroundColor: "#fff", flex: 1 },
+  qrDarkCell: { backgroundColor: "#000" },
 });

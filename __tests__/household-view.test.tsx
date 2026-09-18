@@ -32,6 +32,8 @@ function renderText(state: HouseholdViewState) {
       onReload: noOp,
       onSave: noOp,
       onSignOut: noOp,
+      onCreateInvitation: noOp,
+      onRevokeInvitation: noOp,
     }),
   ).join(" ");
 }
@@ -77,5 +79,39 @@ describe("household setup and settings presentation", () => {
     expect(text).toMatch(/Saving…/);
     expect(text).toMatch(/Time zone saved/);
     expect(text).toMatch(/try again/);
+  });
+
+  it("shows invitation loading, QR success, failure, and inactive states", () => {
+    expect(
+      renderText({ ...base, phase: "settings", invitationPhase: "loading" }),
+    ).toMatch(/Loading invitation/);
+    const url =
+      "https://example.test/invitations/parent?token=abcdefghijklmnopqrstuvwxyzABCDEFGH123456789";
+    expect(
+      renderText({
+        ...base,
+        phase: "settings",
+        invitationPhase: "success",
+        invitationUrl: url,
+        invitationExpiresAt: "2026-09-19T20:00:00Z",
+      }),
+    ).toContain(url);
+    expect(
+      renderText({
+        ...base,
+        phase: "settings",
+        invitationPhase: "error",
+        invitationMessage: "Please try again.",
+      }),
+    ).toMatch(/try again/);
+    for (const [phase, label] of [
+      ["expired", /expired/],
+      ["revoked", /revoked/],
+      ["consumed", /already used/],
+    ] as const) {
+      expect(
+        renderText({ ...base, phase: "settings", invitationPhase: phase }),
+      ).toMatch(label);
+    }
   });
 });

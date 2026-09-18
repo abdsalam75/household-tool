@@ -16,5 +16,18 @@ export function createHouseholdService(): HouseholdService {
       flowType: "pkce",
     },
   });
-  return new HouseholdService(client);
+  return new HouseholdService(
+    client,
+    `${config.supabaseUrl}/functions/v1/parent-invitations/accept`,
+    {
+      getItem: () => secureSessionStorage.getItem(PARENT_INVITATION_CACHE_KEY),
+      setItem: (value) =>
+        secureSessionStorage.setItem(PARENT_INVITATION_CACHE_KEY, value),
+      removeItem: () =>
+        secureSessionStorage.removeItem(PARENT_INVITATION_CACHE_KEY),
+    },
+  );
 }
+
+export const PARENT_INVITATION_CACHE_KEY =
+  "household-tool-parent-invitation-url";

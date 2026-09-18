@@ -1,5 +1,7 @@
 import type {
   HouseholdOutcome,
+  ParentInvitation,
+  ParentInvitationOutcome,
   HouseholdService as HouseholdServiceContract,
   HouseholdSettings,
 } from "./types";
@@ -14,11 +16,21 @@ export type HouseholdRpcClient = {
   ): PromiseLike<RpcResult>;
 };
 
+export type ParentInvitationCache = {
+  getItem(): Promise<string | null>;
+  setItem(value: string): Promise<void>;
+  removeItem(): Promise<void>;
+};
+
 const RETRY_ERROR = "Household settings are unavailable. Please try again.";
 const ZONE_ERROR =
   "Enter a valid named IANA time zone, such as Africa/Lagos or Etc/UTC.";
 const CREATE_CONFLICT =
   "This account already belongs to a household and cannot create another one.";
+const INVITATION_RETRY =
+  "Parent invitations are unavailable. Please try again.";
+const INVITATION_AUTH = "Parent invitations are unavailable for this account.";
+const PARENT_LIMIT = "This household already has two active parents.";
 
 function firstRow(data: unknown): Record<string, unknown> | null {
   const value = Array.isArray(data) ? data[0] : data;
@@ -50,8 +62,39 @@ function safeMessage(error: RpcError, action: "create" | "read" | "update") {
   return RETRY_ERROR;
 }
 
+function invitationFrom(data: unknown): ParentInvitation | null {
+  const row = firstRow(data);
+  if (!row) return null;
+  const status = row.invitation_status;
+  if (
+    (status !== "active" &&
+      status !== "expired" &&
+      status !== "revoked" &&
+      status !== "consumed") ||
+    typeof row.created_at !== "string" ||
+    typeof row.expires_at !== "string"
+  ) {
+    return null;
+  }
+  return {
+    status,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+  };
+}
+
+function invitationMessage(error: RpcError) {
+  if (error.code === "42501") return INVITATION_AUTH;
+  if (error.code === "23514") return PARENT_LIMIT;
+  return INVITATION_RETRY;
+}
+
 export class HouseholdService implements HouseholdServiceContract {
-  constructor(private readonly client: HouseholdRpcClient) {}
+  constructor(
+    private readonly client: HouseholdRpcClient,
+    private readonly invitationUrlBase = "https://household.invalid/invitations/parent",
+    private readonly invitationCache?: ParentInvitationCache,
+  ) {}
 
   async load(): Promise<HouseholdOutcome> {
     try {
@@ -69,6 +112,103 @@ export class HouseholdService implements HouseholdServiceContract {
 
   async updateTimeZone(timeZone: string): Promise<HouseholdOutcome> {
     return this.mutate("update_household_timezone", timeZone, "update");
+  }
+
+  async loadParentInvitation(): Promise<ParentInvitationOutcome> {
+    try {
+      const { data, error } = await this.client.rpc(
+        "get_parent_invitation_status",
+      );
+      if (error) return { invitation: null, message: invitationMessage(error) };
+      const invitation = invitationFrom(data);
+      if (invitation?.status !== "active" || !this.invitationCache) {
+        if (invitation?.status !== "active")
+          await this.invitationCache?.removeItem().catch(() => undefined);
+        return { invitation };
+      }
+      const cached = await this.invitationCache.getItem().catch(() => null);
+      if (!cached) return { invitation };
+      try {
+        const parsed = JSON.parse(cached) as Record<string, unknown>;
+        if (
+          parsed.createdAt === invitation.createdAt &&
+          parsed.expiresAt === invitation.expiresAt &&
+          typeof parsed.url === "string" &&
+          this.isInvitationUrl(parsed.url)
+        ) {
+          return { invitation: { ...invitation, url: parsed.url } };
+        }
+      } catch {
+        // Invalid or stale secure cache entries are never displayed.
+      }
+      return { invitation };
+    } catch {
+      return { invitation: null, message: INVITATION_RETRY };
+    }
+  }
+
+  async createParentInvitation(): Promise<ParentInvitationOutcome> {
+    try {
+      const { data, error } = await this.client.rpc("create_parent_invitation");
+      if (error) return { invitation: null, message: invitationMessage(error) };
+      const row = firstRow(data);
+      if (
+        !row ||
+        typeof row.link_token !== "string" ||
+        !/^[A-Za-z0-9_-]{43}$/.test(row.link_token) ||
+        typeof row.created_at !== "string" ||
+        typeof row.expires_at !== "string"
+      ) {
+        return { invitation: null, message: INVITATION_RETRY };
+      }
+      const url = new URL(this.invitationUrlBase);
+      url.search = "";
+      url.hash = "";
+      url.searchParams.set("token", row.link_token);
+      const invitation: ParentInvitation = {
+        status: "active",
+        createdAt: row.created_at,
+        expiresAt: row.expires_at,
+        url: url.toString(),
+      };
+      await this.invitationCache
+        ?.setItem(JSON.stringify(invitation))
+        .catch(() => undefined);
+      return { invitation };
+    } catch {
+      return { invitation: null, message: INVITATION_RETRY };
+    }
+  }
+
+  async revokeParentInvitation(): Promise<ParentInvitationOutcome> {
+    try {
+      const { data, error } = await this.client.rpc("revoke_parent_invitation");
+      if (error) return { invitation: null, message: invitationMessage(error) };
+      const invitation = invitationFrom(data);
+      if (invitation)
+        await this.invitationCache?.removeItem().catch(() => undefined);
+      return invitation
+        ? { invitation }
+        : { invitation: null, message: INVITATION_RETRY };
+    } catch {
+      return { invitation: null, message: INVITATION_RETRY };
+    }
+  }
+
+  private isInvitationUrl(candidate: string) {
+    try {
+      const expected = new URL(this.invitationUrlBase);
+      const actual = new URL(candidate);
+      return (
+        actual.origin === expected.origin &&
+        actual.pathname === expected.pathname &&
+        actual.hash === "" &&
+        [...actual.searchParams.keys()].length === 1 &&
+        /^[A-Za-z0-9_-]{43}$/.test(actual.searchParams.get("token") ?? "")
+      );
+    } catch {
+      return false;
+    }
   }
 
   private async mutate(
