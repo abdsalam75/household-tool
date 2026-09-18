@@ -62,7 +62,7 @@ describe("parent invitation app flow", () => {
     jest
       .spyOn(Linking, "getInitialURL")
       .mockResolvedValue(
-        `https://api.example.test/functions/v1/parent-invitations/accept?token=${"a".repeat(43)}`,
+        `https://invite.example.test/invitations/parent?token=${"a".repeat(43)}`,
       );
     jest.spyOn(Linking, "addEventListener").mockReturnValue({
       remove: jest.fn(),

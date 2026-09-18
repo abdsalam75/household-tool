@@ -3,9 +3,11 @@ import { createClient } from "@supabase/supabase-js";
 import { readExpoPublicAuthConfig } from "../auth/config";
 import { AUTH_STORAGE_KEY, secureSessionStorage } from "../auth/secureStorage";
 import { HouseholdService } from "./HouseholdService";
+import { readExpoPublicInvitationLinkConfig } from "./invitationLinkConfig";
 
 export function createHouseholdService(): HouseholdService {
   const config = readExpoPublicAuthConfig();
+  const invitationConfig = readExpoPublicInvitationLinkConfig();
   const client = createClient(config.supabaseUrl, config.supabaseAnonKey, {
     auth: {
       storage: secureSessionStorage,
@@ -16,17 +18,13 @@ export function createHouseholdService(): HouseholdService {
       flowType: "pkce",
     },
   });
-  return new HouseholdService(
-    client,
-    `${config.supabaseUrl}/functions/v1/parent-invitations/accept`,
-    {
-      getItem: () => secureSessionStorage.getItem(PARENT_INVITATION_CACHE_KEY),
-      setItem: (value) =>
-        secureSessionStorage.setItem(PARENT_INVITATION_CACHE_KEY, value),
-      removeItem: () =>
-        secureSessionStorage.removeItem(PARENT_INVITATION_CACHE_KEY),
-    },
-  );
+  return new HouseholdService(client, invitationConfig.parentInvitationUrl, {
+    getItem: () => secureSessionStorage.getItem(PARENT_INVITATION_CACHE_KEY),
+    setItem: (value) =>
+      secureSessionStorage.setItem(PARENT_INVITATION_CACHE_KEY, value),
+    removeItem: () =>
+      secureSessionStorage.removeItem(PARENT_INVITATION_CACHE_KEY),
+  });
 }
 
 export const PARENT_INVITATION_CACHE_KEY =

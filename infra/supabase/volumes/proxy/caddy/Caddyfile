@@ -1,5 +1,102 @@
 # The local environment generator uses localhost. Production supplies the real
 # public hostname outside Git. Caddy manages TLS and redirects HTTP to HTTPS.
 {$PROXY_DOMAIN:localhost} {
-  reverse_proxy api-gw:8000
+	reverse_proxy api-gw:8000
+}
+
+# A separate invitation origin keeps association and fallback responses away
+# from the API gateway. Deployment values must match the corresponding build.
+{$INVITE_DOMAIN:invite.localhost} {
+	@aasa path /.well-known/apple-app-site-association
+	handle @aasa {
+		header Content-Type "application/json"
+		header Cache-Control "no-store, max-age=0"
+		header X-Content-Type-Options "nosniff"
+		respond <<JSON
+      {
+        "applinks": {
+          "details": [
+            {
+              "appIDs": ["{$IOS_APP_ID}"],
+              "components": [
+                {
+                  "/": "/invitations/parent",
+                  "?": {
+                    "token": "???????????????????????????????????????????"
+                  },
+                  "comment": "Open only canonical parent invitation URLs with a 43-character token."
+                }
+              ]
+            }
+          ]
+        }
+      }
+      JSON 200
+	}
+
+	@assetlinks path /.well-known/assetlinks.json
+	handle @assetlinks {
+		header Content-Type "application/json"
+		header Cache-Control "no-store, max-age=0"
+		header X-Content-Type-Options "nosniff"
+		respond <<JSON
+      [
+        {
+          "relation": ["delegate_permission/common.handle_all_urls"],
+          "target": {
+            "namespace": "android_app",
+            "package_name": "{$ANDROID_PACKAGE_NAME}",
+            "sha256_cert_fingerprints": ["{$ANDROID_CERT_SHA256}"]
+          },
+          "relation_extensions": {
+            "delegate_permission/common.handle_all_urls": {
+              "dynamic_app_link_components": [
+                {
+                  "/": "/invitations/parent",
+                  "?": {
+                    "token": "???????????????????????????????????????????"
+                  }
+                },
+                {
+                  "/": "*",
+                  "exclude": true
+                }
+              ]
+            }
+          }
+        }
+      ]
+      JSON 200
+	}
+
+	handle {
+		header Content-Type "text/html; charset=utf-8"
+		header Cache-Control "no-store, max-age=0"
+		header Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+		header Referrer-Policy "no-referrer"
+		header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		header X-Content-Type-Options "nosniff"
+		respond <<HTML
+      <!doctype html>
+      <html lang="en">
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>Open Household Tool</title>
+          <style>
+            body { background: #f4f1ea; color: #152238; font: 16px/1.5 system-ui, sans-serif; margin: 0; }
+            main { background: #fff; border-radius: 20px; margin: 12vh auto; max-width: 34rem; padding: 2rem; width: calc(100% - 6rem); }
+            h1 { margin-top: 0; }
+          </style>
+        </head>
+        <body>
+          <main>
+            <h1>Open Household Tool</h1>
+            <p>Install or open Household Tool, then return to the message that brought you here and tap its invitation link again.</p>
+            <p>For your privacy, invitation details are shown only inside the app after sign-in.</p>
+          </main>
+        </body>
+      </html>
+      HTML 200
+	}
 }

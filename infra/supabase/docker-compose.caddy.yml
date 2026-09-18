@@ -9,6 +9,10 @@ services:
     restart: unless-stopped
     environment:
       PROXY_DOMAIN: ${PROXY_DOMAIN}
+      INVITE_DOMAIN: ${INVITE_DOMAIN}
+      IOS_APP_ID: ${IOS_APP_ID}
+      ANDROID_PACKAGE_NAME: ${ANDROID_PACKAGE_NAME}
+      ANDROID_CERT_SHA256: ${ANDROID_CERT_SHA256}
     ports:
       - "80:80"
       - "443:443"

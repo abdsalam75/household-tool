@@ -3,7 +3,7 @@ import {
   type InvitationAcceptanceRpcClient,
 } from "../src/household/ParentInvitationAcceptanceService";
 
-const base = "https://api.example.test/functions/v1/parent-invitations/accept";
+const base = "https://invite.example.test/invitations/parent";
 const token = "a".repeat(43);
 
 function setup(stored: string | null = null) {

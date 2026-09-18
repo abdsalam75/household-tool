@@ -11,7 +11,8 @@
     "format": "prettier --write \"**/*.{js,cjs,mjs,jsx,ts,tsx,json}\"",
     "format:check": "prettier --check \"**/*.{js,cjs,mjs,jsx,ts,tsx,json}\"",
     "lint": "eslint .",
-    "test": "jest"
+    "test": "jest",
+    "verify:invitation-deployment": "node scripts/verify-invitation-deployment.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",

@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 
 import { readExpoPublicAuthConfig } from "../auth/config";
 import { AUTH_STORAGE_KEY, secureSessionStorage } from "../auth/secureStorage";
+import { readExpoPublicInvitationLinkConfig } from "./invitationLinkConfig";
 import { ParentInvitationAcceptanceService } from "./ParentInvitationAcceptanceService";
 
 export const PENDING_PARENT_INVITATION_KEY =
@@ -9,6 +10,7 @@ export const PENDING_PARENT_INVITATION_KEY =
 
 export function createParentInvitationAcceptanceService() {
   const config = readExpoPublicAuthConfig();
+  const invitationConfig = readExpoPublicInvitationLinkConfig();
   const client = createClient(config.supabaseUrl, config.supabaseAnonKey, {
     auth: {
       storage: secureSessionStorage,
@@ -21,7 +23,7 @@ export function createParentInvitationAcceptanceService() {
   });
   return new ParentInvitationAcceptanceService(
     client,
-    `${config.supabaseUrl}/functions/v1/parent-invitations/accept`,
+    invitationConfig.parentInvitationUrl,
     {
       getItem: () =>
         secureSessionStorage.getItem(PENDING_PARENT_INVITATION_KEY),
