@@ -76,6 +76,59 @@ if [[ "$acceptance_counts" != "1:1" ]]; then
   exit 1
 fi
 
+"${psql[@]}" --command "INSERT INTO auth.users (id, email) VALUES ('40000000-0000-0000-0000-000000000011', 'expiry-inviter@example.test'), ('40000000-0000-0000-0000-000000000012', 'expiry-blocker@example.test'), ('40000000-0000-0000-0000-000000000013', 'expiry-recipient@example.test'); INSERT INTO public.households (id, timezone, creator_account_id) VALUES ('d0000000-0000-0000-0000-000000000005', 'Africa/Lagos', '40000000-0000-0000-0000-000000000011'), ('d0000000-0000-0000-0000-000000000006', 'Etc/UTC', '40000000-0000-0000-0000-000000000012'); INSERT INTO public.members (household_id, account_id, display_name, role) VALUES ('d0000000-0000-0000-0000-000000000005', '40000000-0000-0000-0000-000000000011', 'Expiry inviter', 'parent'), ('d0000000-0000-0000-0000-000000000006', '40000000-0000-0000-0000-000000000012', 'Expiry blocker', 'parent'); INSERT INTO public.parent_invitations (household_id, token_digest, created_by, created_at, expires_at) VALUES ('d0000000-0000-0000-0000-000000000005', extensions.digest(repeat('j', 43), 'sha256'), '40000000-0000-0000-0000-000000000011', statement_timestamp() - interval '23 hours 59 minutes 56 seconds', statement_timestamp() + interval '4 seconds');"
+
+expiry_blocker_output="${temporary_directory}/expiry-blocker.log"
+expiry_recipient_output="${temporary_directory}/expiry-recipient.log"
+expiry_blocker_command="BEGIN; SET LOCAL ROLE authenticated; SET LOCAL request.jwt.claim.sub = '40000000-0000-0000-0000-000000000012'; SET LOCAL request.jwt.claims = '{\"sub\":\"40000000-0000-0000-0000-000000000012\",\"email\":\"expiry-blocker@example.test\",\"role\":\"authenticated\"}'; SELECT invitation_status FROM public.accept_parent_invitation(repeat('j', 43)); SELECT pg_sleep(5) /* expiry_lock_held */; COMMIT;"
+expiry_recipient_command="BEGIN; SET LOCAL ROLE authenticated; SET LOCAL request.jwt.claim.sub = '40000000-0000-0000-0000-000000000013'; SET LOCAL request.jwt.claims = '{\"sub\":\"40000000-0000-0000-0000-000000000013\",\"email\":\"expiry-recipient@example.test\",\"role\":\"authenticated\"}'; SELECT invitation_status FROM public.accept_parent_invitation(repeat('j', 43)); COMMIT;"
+
+set +e
+"${psql[@]}" --command "$expiry_blocker_command" >"$expiry_blocker_output" 2>&1 &
+expiry_blocker_pid=$!
+expiry_lock_state="false:false"
+for _ in {1..30}; do
+  expiry_lock_state="$("${psql[@]}" --tuples-only --no-align --command "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE pid <> pg_catalog.pg_backend_pid() AND query LIKE '%expiry_lock_held%' AND wait_event = 'PgSleep') || ':' || (SELECT pg_catalog.clock_timestamp() < expires_at FROM public.parent_invitations WHERE token_digest = extensions.digest(repeat('j', 43), 'sha256'));")"
+  if [[ "$expiry_lock_state" == true:* ]]; then
+    break
+  fi
+  sleep 0.1
+done
+if [[ "$expiry_lock_state" != "true:true" ]]; then
+  wait "$expiry_blocker_pid"
+  set -e
+  echo "error: expiry race blocker was not confirmed holding the row before expiry: $expiry_lock_state" >&2
+  sed -n '1,120p' "$expiry_blocker_output" >&2
+  exit 1
+fi
+"${psql[@]}" --command "$expiry_recipient_command" >"$expiry_recipient_output" 2>&1 &
+expiry_recipient_pid=$!
+wait "$expiry_blocker_pid"
+expiry_blocker_status=$?
+wait "$expiry_recipient_pid"
+expiry_recipient_status=$?
+set -e
+
+if [[ "$expiry_blocker_status" -ne 0 || "$expiry_recipient_status" -ne 0 ]]; then
+  echo "error: expiry-under-lock acceptance requests did not both return safely" >&2
+  sed -n '1,120p' "$expiry_blocker_output" >&2
+  sed -n '1,120p' "$expiry_recipient_output" >&2
+  exit 1
+fi
+
+if ! grep -q -E '^[[:space:]]*already_member[[:space:]]*$' "$expiry_blocker_output" || ! grep -q -E '^[[:space:]]*expired[[:space:]]*$' "$expiry_recipient_output"; then
+  echo "error: acceptance waiting beyond expiry did not return expired" >&2
+  sed -n '1,120p' "$expiry_blocker_output" >&2
+  sed -n '1,120p' "$expiry_recipient_output" >&2
+  exit 1
+fi
+
+expiry_race_state="$("${psql[@]}" --tuples-only --no-align --command "SELECT (SELECT count(*) FROM public.members WHERE account_id = '40000000-0000-0000-0000-000000000013') || ':' || (SELECT count(*) FROM public.parent_invitations WHERE token_digest = extensions.digest(repeat('j', 43), 'sha256') AND used_at IS NOT NULL) || ':' || (SELECT pg_catalog.clock_timestamp() >= expires_at FROM public.parent_invitations WHERE token_digest = extensions.digest(repeat('j', 43), 'sha256'));")"
+if [[ "$expiry_race_state" != "0:0:true" ]]; then
+  echo "error: expiry-under-lock acceptance mutated state or did not pass expiry: $expiry_race_state" >&2
+  exit 1
+fi
+
 setup_first_output="${temporary_directory}/first-setup-attempt.log"
 setup_second_output="${temporary_directory}/second-setup-attempt.log"
 setup_command="BEGIN; SET LOCAL ROLE authenticated; SET LOCAL request.jwt.claim.sub = '30000000-0000-0000-0000-000000000005'; SET LOCAL request.jwt.claims = '{\"sub\":\"30000000-0000-0000-0000-000000000005\",\"email\":\"concurrent@example.test\",\"role\":\"authenticated\"}'; SELECT * FROM public.setup_household('Africa/Lagos'); SELECT pg_sleep(1); COMMIT;"
@@ -142,4 +195,5 @@ COMPOSE_PROJECT_NAME="$project_name" "${repo_root}/scripts/apply-supabase-migrat
 echo "Concurrent active-parent limit passed."
 echo "Concurrent household setup retry passed."
 echo "Concurrent parent invitation acceptance passed."
+echo "Expiry-under-lock parent invitation rejection passed."
 echo "Household/member disposable database verification passed."

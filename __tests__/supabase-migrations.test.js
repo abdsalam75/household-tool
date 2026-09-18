@@ -13,6 +13,7 @@ describe("Supabase database migrations", () => {
       "20260918193000_add_household_setup_and_settings.sql",
       "20260918210000_add_parent_invitations.sql",
       "20260918223000_accept_parent_invitations.sql",
+      "20260918224500_fix_parent_invitation_expiry_race.sql",
     ]);
     for (const migration of migrations) {
       expect(migration).toMatch(/^\d{14}_[a-z0-9]+(?:_[a-z0-9]+)*\.sql$/);
@@ -76,6 +77,22 @@ describe("Supabase database migrations", () => {
     );
     expect(invitationAcceptance).not.toMatch(
       /requested_household|household_id uuid\)/,
+    );
+
+    const invitationExpiryFix = readFileSync(
+      `${migrationDirectory}/${migrations[5]}`,
+      "utf8",
+    );
+    expect(invitationExpiryFix).toContain(
+      "CREATE OR REPLACE FUNCTION public.accept_parent_invitation(raw_token text)",
+    );
+    expect(invitationExpiryFix).toContain(
+      "accepted_at := pg_catalog.clock_timestamp()",
+    );
+    expect(invitationExpiryFix.indexOf("FOR UPDATE")).toBeLessThan(
+      invitationExpiryFix.indexOf(
+        "accepted_at := pg_catalog.clock_timestamp()",
+      ),
     );
   });
 
