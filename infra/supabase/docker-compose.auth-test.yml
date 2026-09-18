@@ -1,0 +1,10 @@
+# Disposable backend-only Auth verification overlay. This publishes only Auth
+# on loopback and gives the fixed-name services isolated container names.
+services:
+  db:
+    container_name: household-auth-check-db
+
+  auth:
+    container_name: household-auth-check-auth
+    ports:
+      - "127.0.0.1:${AUTH_TEST_PORT:-54329}:9999"

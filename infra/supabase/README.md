@@ -79,6 +79,22 @@ The generated `.env` is ignored and is only for disposable local operation.
 Delete it before generating a fresh environment; the generator deliberately
 refuses to overwrite an existing file.
 
+## Parent authentication providers
+
+Email/password, Google, and Apple configuration, the local/staging/production
+redirect matrix, provider-console checklists, secret-handling rules, and exact
+verification commands are in [AUTH.md](./AUTH.md). The committed redacted
+backend evidence and any credential-gated results are in
+[auth-validation.md](./auth-validation.md).
+
+Run the focused automated and disposable runtime checks from the repository
+root:
+
+```sh
+npm test -- __tests__/supabase-auth.test.js
+./scripts/test-supabase-auth.sh
+```
+
 ## Application database migrations
 
 `infra/supabase/migrations/` is the source of truth for application schema
