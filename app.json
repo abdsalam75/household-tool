@@ -4,12 +4,17 @@
     "slug": "household-tool",
     "version": "0.1.0",
     "orientation": "portrait",
+    "scheme": [
+      "household-tool-local",
+      "household-tool-staging",
+      "household-tool"
+    ],
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
     },
     "android": {},
-    "plugins": ["expo-dev-client"]
+    "plugins": ["expo-dev-client", "expo-secure-store"]
   }
 }
