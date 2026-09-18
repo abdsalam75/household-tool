@@ -74,6 +74,12 @@ describe("Supabase local environment generation", () => {
 
     expect(compose).toContain("condition: service_healthy");
     expect(compose).not.toContain("condition: service_started");
+    expect(compose).toContain(
+      "fetch('http://127.0.0.1:8080/health').then((r) => {if (!r.ok) process.exit(1)}).catch(() => process.exit(1))",
+    );
+    expect(compose).not.toContain(
+      "wget -q --spider http://localhost:8080/health",
+    );
     expect(compose).toContain("postgres-data:/var/lib/postgresql/data");
     expect(compose).toContain("storage-data:/var/lib/storage");
     expect(caddy).toContain('      - "80:80"');
