@@ -79,6 +79,110 @@ The generated `.env` is ignored and is only for disposable local operation.
 Delete it before generating a fresh environment; the generator deliberately
 refuses to overwrite an existing file.
 
+## Application database migrations
+
+`infra/supabase/migrations/` is the source of truth for application schema
+changes. Migration files are plain SQL and use the unique, lexicographically
+sortable format `YYYYMMDDHHMMSS_lowercase_words.sql` (UTC timestamp followed
+by a lowercase snake-case description). Never edit an applied file. Add a new
+migration with a later timestamp instead.
+
+Never edit the database schema directly. Every application schema change must
+be represented by a reviewed migration file and applied through this workflow.
+
+The prerequisites are the local prerequisites above, a generated
+`infra/supabase/.env`, and a healthy `db` service. From the repository root,
+start only that service if the full stack is not already running, then apply
+all pending migrations:
+
+```sh
+./scripts/create-supabase-env.sh # only when infra/supabase/.env does not exist
+docker compose --env-file infra/supabase/.env -f infra/supabase/docker-compose.yml up -d --wait db
+./scripts/apply-supabase-migrations.sh
+```
+
+The script uses `psql` inside the existing `db` container, so it requires no
+host PostgreSQL client, Supabase CLI, or password argument. It prints every
+filename it applies in filename order. Each migration and its history record
+commit in one transaction; a failure rolls both back, stops later migrations,
+and returns a non-zero status. A repeat run reports `No pending migrations.`
+
+To create a migration, choose a new UTC timestamp and description, write its
+SQL, review it, and apply it:
+
+```sh
+touch infra/supabase/migrations/20260918153000_describe_the_change.sql
+# Edit and review the SQL file, then:
+./scripts/apply-supabase-migrations.sh
+```
+
+Applied filenames and SHA-256 checksums are recorded in
+`public.schema_migrations`. Inspect them without exposing a password:
+
+```sh
+docker compose --env-file infra/supabase/.env -f infra/supabase/docker-compose.yml exec -T db \
+  psql -X --no-password --username postgres --command \
+  'SELECT filename, checksum, applied_at FROM public.schema_migrations ORDER BY filename;'
+```
+
+The starter migration creates only the empty, non-product `app_private`
+schema. Verify it exists with:
+
+```sh
+docker compose --env-file infra/supabase/.env -f infra/supabase/docker-compose.yml exec -T db \
+  psql -X --no-password --username postgres --tuples-only --command \
+  "SELECT to_regnamespace('app_private');"
+```
+
+The workflow checks every recorded checksum before applying anything pending.
+If an applied file changed or disappeared, it exits with an immutability error
+and does not run later migrations. Restore the applied file exactly; never
+rewrite migration history.
+
+### Fresh disposable verification
+
+Use an isolated Compose project to repeat the complete check without touching
+the normal local database volumes. Because the upstream topology fixes
+container names, first stop the normal local stack without deleting its
+volumes. The cleanup command below permanently deletes only the explicitly
+named `household-migrations-check` project's disposable data. These commands
+must never be run against a deployed environment.
+
+```sh
+docker compose --env-file infra/supabase/.env -f infra/supabase/docker-compose.yml -f infra/supabase/docker-compose.caddy.yml down
+COMPOSE_PROJECT_NAME=household-migrations-check docker compose --env-file infra/supabase/.env -f infra/supabase/docker-compose.yml up -d --wait db
+COMPOSE_PROJECT_NAME=household-migrations-check ./scripts/apply-supabase-migrations.sh
+COMPOSE_PROJECT_NAME=household-migrations-check ./scripts/apply-supabase-migrations.sh
+COMPOSE_PROJECT_NAME=household-migrations-check docker compose --env-file infra/supabase/.env -f infra/supabase/docker-compose.yml exec -T db \
+  psql -X --no-password --username postgres --command \
+  "SELECT filename, checksum FROM public.schema_migrations ORDER BY filename; SELECT to_regnamespace('app_private');"
+# WARNING: destroys only the household-migrations-check project's disposable volumes.
+COMPOSE_PROJECT_NAME=household-migrations-check docker compose --env-file infra/supabase/.env -f infra/supabase/docker-compose.yml down --volumes
+docker compose --env-file infra/supabase/.env -f infra/supabase/docker-compose.yml -f infra/supabase/docker-compose.caddy.yml up -d --wait
+```
+
+To demonstrate atomic failure handling in that isolated project, add a
+temporary migration containing one valid statement followed by invalid SQL
+and another migration ordered after it. Run the migration command, then
+inspect the attempted objects and history. The command must fail, all three
+queries must return no row, and the later migration must not run:
+
+```sh
+docker compose --env-file infra/supabase/.env -f infra/supabase/docker-compose.yml -f infra/supabase/docker-compose.caddy.yml down
+COMPOSE_PROJECT_NAME=household-migrations-check docker compose --env-file infra/supabase/.env -f infra/supabase/docker-compose.yml up -d --wait db
+COMPOSE_PROJECT_NAME=household-migrations-check ./scripts/apply-supabase-migrations.sh
+printf '%s\n' 'CREATE TABLE app_private.failure_probe (id integer);' 'INVALID SQL;' > infra/supabase/migrations/99990101000000_failure_probe.sql
+printf '%s\n' 'CREATE TABLE app_private.later_probe (id integer);' > infra/supabase/migrations/99990101000001_later_probe.sql
+COMPOSE_PROJECT_NAME=household-migrations-check ./scripts/apply-supabase-migrations.sh
+COMPOSE_PROJECT_NAME=household-migrations-check docker compose --env-file infra/supabase/.env -f infra/supabase/docker-compose.yml exec -T db \
+  psql -X --no-password --username postgres --command \
+  "SELECT to_regclass('app_private.failure_probe'); SELECT to_regclass('app_private.later_probe'); SELECT * FROM public.schema_migrations WHERE filename >= '99990101000000';"
+rm infra/supabase/migrations/99990101000000_failure_probe.sql infra/supabase/migrations/99990101000001_later_probe.sql
+# WARNING: destroys only the household-migrations-check project's disposable volumes.
+COMPOSE_PROJECT_NAME=household-migrations-check docker compose --env-file infra/supabase/.env -f infra/supabase/docker-compose.yml down --volumes
+docker compose --env-file infra/supabase/.env -f infra/supabase/docker-compose.yml -f infra/supabase/docker-compose.caddy.yml up -d --wait
+```
+
 ## Production boundary
 
 Only Caddy publishes host TCP ports 80 and 443 (and UDP 443 for HTTP/3). Caddy
