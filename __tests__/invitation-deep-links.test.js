@@ -41,7 +41,7 @@ function associationJsonBodies() {
   );
 }
 
-function runVerifierWithMockResponses(badFallback = false) {
+function runVerifierWithMockResponses(badFallback = false, overrides = {}) {
   const [aasa, assetlinks] = associationJsonBodies();
   const preload = `
     const aasa = ${JSON.stringify(aasa)};
@@ -50,6 +50,9 @@ function runVerifierWithMockResponses(badFallback = false) {
       const url = new URL(input);
       const common = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
       if (url.pathname === "/.well-known/apple-app-site-association") {
+        if (process.env.INVITATION_ANDROID_ONLY === "true") {
+          throw new Error("Android-only verification requested AASA");
+        }
         return new Response(JSON.stringify(aasa), {
           status: 200, headers: { ...common, "Content-Type": "application/json" },
         });
@@ -77,9 +80,11 @@ function runVerifierWithMockResponses(badFallback = false) {
         ...process.env,
         EXPO_PUBLIC_INVITATION_ORIGIN: "https://invite-staging.example.test",
         IOS_APP_ID: "TEAM123456.com.example.household.staging",
+        INVITATION_ANDROID_ONLY: "false",
         ANDROID_PACKAGE_NAME: "com.example.household.staging",
         ANDROID_CERT_SHA256: Array(32).fill("AA").join(":"),
         TEST_BAD_FALLBACK: badFallback ? "1" : "0",
+        ...overrides,
       },
     },
   );
@@ -97,6 +102,7 @@ function buildPages(cwd, overrides = {}) {
         EXPO_PUBLIC_INVITATION_ORIGIN:
           "https://household-tool-invitations.pages.dev",
         IOS_APP_ID: "TEAM123456.com.example.household.staging",
+        INVITATION_ANDROID_ONLY: "false",
         ANDROID_PACKAGE_NAME: "com.example.household.staging",
         ANDROID_CERT_SHA256: Array(32).fill("ab").join(":"),
         ...overrides,
@@ -279,6 +285,18 @@ describe("invitation deep-link configuration", () => {
     expect(result.stderr).not.toContain("token=");
   });
 
+  it("verifies an Android-only deployment without requiring or requesting AASA", () => {
+    const result = runVerifierWithMockResponses(false, {
+      INVITATION_ANDROID_ONLY: "true",
+      IOS_APP_ID: "",
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout).not.toContain("PASS AASA");
+    expect(result.stdout).toContain("PASS assetlinks.json");
+    expect(result.stdout).toContain("PASS unsupported-path fallback");
+    expect(result.stderr).toBe("");
+  });
+
   it("builds direct Pages association assets and one generic canonical and unknown-path fallback", () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "invitation-pages-"));
     try {
@@ -362,8 +380,76 @@ describe("invitation deep-link configuration", () => {
     }
   });
 
+  it("rebuilds Android-only Pages output without AASA or its header rule", () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "invitation-pages-"));
+    try {
+      expect(buildPages(cwd).status).toBe(0);
+      const result = buildPages(cwd, {
+        INVITATION_ANDROID_ONLY: "true",
+        IOS_APP_ID: "",
+      });
+      expect(result.status).toBe(0);
+      const output = path.join(cwd, "dist/invitation-pages");
+      expect(fs.readdirSync(path.join(output, ".well-known"))).toEqual([
+        "assetlinks.json",
+      ]);
+      const assetlinks = JSON.parse(
+        fs.readFileSync(
+          path.join(output, ".well-known/assetlinks.json"),
+          "utf8",
+        ),
+      );
+      expect(assetlinks[0].target).toEqual({
+        namespace: "android_app",
+        package_name: "com.example.household.staging",
+        sha256_cert_fingerprints: [Array(32).fill("AB").join(":")],
+      });
+      expect(
+        assetlinks[0].relation_extensions[
+          "delegate_permission/common.handle_all_urls"
+        ].dynamic_app_link_components,
+      ).toEqual([
+        { "/": "/invitations/parent", "?": { token: tokenPattern } },
+        { "/": "*", exclude: true },
+      ]);
+      const headers = fs.readFileSync(path.join(output, "_headers"), "utf8");
+      expect(headers).toContain(
+        "/.well-known/assetlinks.json\n  Content-Type: application/json",
+      );
+      expect(headers).not.toContain("apple-app-site-association");
+      expect(headers).toContain("Cache-Control: no-store, max-age=0");
+      expect(headers).toContain("Referrer-Policy: no-referrer");
+      const fallback = fs.readFileSync(path.join(output, "index.html"), "utf8");
+      expect(
+        fs.readFileSync(path.join(output, "invitations/parent.html"), "utf8"),
+      ).toBe(fallback);
+      expect(fallback).toContain("Install or open Household Tool");
+      expect(fallback).not.toMatch(/token=|member=|invite-status/i);
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it.each([
     ["missing Apple app ID", { IOS_APP_ID: "" }],
+    ["Apple app ID in Android-only mode", { INVITATION_ANDROID_ONLY: "true" }],
+    ["invalid Android-only mode", { INVITATION_ANDROID_ONLY: "yes" }],
+    [
+      "missing Android package in Android-only mode",
+      {
+        INVITATION_ANDROID_ONLY: "true",
+        IOS_APP_ID: "",
+        ANDROID_PACKAGE_NAME: "",
+      },
+    ],
+    [
+      "missing fingerprint in Android-only mode",
+      {
+        INVITATION_ANDROID_ONLY: "true",
+        IOS_APP_ID: "",
+        ANDROID_CERT_SHA256: "",
+      },
+    ],
     ["missing Android package", { ANDROID_PACKAGE_NAME: "" }],
     ["malformed Android package", { ANDROID_PACKAGE_NAME: "com.example;bad" }],
     ["malformed fingerprint", { ANDROID_CERT_SHA256: "not-a-fingerprint" }],

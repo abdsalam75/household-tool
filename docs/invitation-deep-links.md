@@ -22,7 +22,8 @@ environments.
 | `EXPO_PUBLIC_APP_ENV` | yes | no | `staging` or `production` |
 | `EXPO_PUBLIC_INVITATION_ORIGIN` | yes | Pages build and verification command | Exact HTTPS origin, with no path, query, fragment, credentials, or port |
 | `IOS_BUNDLE_IDENTIFIER` | yes | included within `IOS_APP_ID` | Bundle ID registered for this environment |
-| `IOS_APP_ID` | no | Caddy or Pages | Apple application identifier: `<TEAM_ID>.<IOS_BUNDLE_IDENTIFIER>` |
+| `IOS_APP_ID` | no | Caddy or Pages in full iOS/Android mode | Apple application identifier: `<TEAM_ID>.<IOS_BUNDLE_IDENTIFIER>`; leave unset for Android-only Pages |
+| `INVITATION_ANDROID_ONLY` | no | Pages build and verification command | Set to `true` for Android-only output; omit or set `false` for full iOS/Android output |
 | `ANDROID_PACKAGE_NAME` | yes | Caddy or Pages | Android application ID for this environment |
 | `ANDROID_CERT_SHA256` | no | Caddy or Pages | SHA-256 fingerprint of the certificate that signs this environment's installed build |
 | `INVITE_DOMAIN` | no | Caddy only | Hostname from `EXPO_PUBLIC_INVITATION_ORIGIN`, without `https://` |
@@ -54,18 +55,24 @@ directory to the repository root, framework preset to None, build command to
 Pages project to the identifiers of the matching staging build:
 
 - `EXPO_PUBLIC_INVITATION_ORIGIN=https://household-tool-invitations.pages.dev`
-- `IOS_APP_ID` — registered Apple team ID plus staging bundle identifier.
+- `INVITATION_ANDROID_ONLY=true` — explicitly deploy Android-only association
+  output while the registered Apple application ID is unavailable.
 - `ANDROID_PACKAGE_NAME` — installed staging Android package identifier.
 - `ANDROID_CERT_SHA256` — SHA-256 fingerprint of the certificate signing that
   installed build, as 32 colon-separated hexadecimal bytes.
 
-The build fails if a required value is absent or malformed. It writes direct
-`/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json`
-assets, an explicit `invitations/parent.html` asset for the extensionless
-canonical path, and the same generic `index.html` fallback. There is no
+Leave `IOS_APP_ID` unset in Android-only mode; the builder rejects a supplied
+value instead of accepting a fabricated identifier. It writes only
+`/.well-known/assetlinks.json` under `.well-known` and omits the AASA header
+rule. To enable iOS later, remove `INVITATION_ANDROID_ONLY` (or set it to
+`false`) and supply the real registered `IOS_APP_ID`. That full mode still
+requires the Apple ID and writes both association files. The build fails if
+any required value is absent or malformed. Both modes write an explicit
+`invitations/parent.html` asset for the extensionless canonical path and the
+same generic `index.html` fallback. There is no
 `404.html`, so Pages' single-page-app fallback serves that generic page for
 unmatched paths. The generated `_headers` sets `Content-Type:
-application/json` on both association paths and `Cache-Control: no-store`,
+application/json` on generated association paths and `Cache-Control: no-store`,
 `Referrer-Policy: no-referrer`, and a restrictive content security policy on
 all paths. No redirect rules, Pages Functions, token parsing, or invitation
 lookup are involved. [Cloudflare's serving rules](https://developers.cloudflare.com/pages/configuration/serving-pages/)
@@ -131,6 +138,14 @@ non-reflecting content. Successful output names each check and its response
 properties without printing a test token or token-bearing URL. The verifier's
 mocked test output is not deployment evidence; capture its output only when run
 against the real staging origin with matching deployment values.
+
+For an Android-only Pages deployment, set `INVITATION_ANDROID_ONLY=true` in
+the verification shell as well, leave `IOS_APP_ID` unset, and supply the same
+origin, Android package, and signing fingerprint. The verifier then checks
+assetlinks and all generic fallback cases without requesting AASA. This is
+Android-only deployment evidence; the issue's iOS acceptance criteria still
+require the real Apple ID, AASA response, signed iOS build, and physical iPhone
+result when iOS is enabled.
 
 ## Physical-device staging checklist
 

@@ -9,6 +9,13 @@ function required(name) {
   return value;
 }
 
+function androidOnlyMode() {
+  const value = process.env.INVITATION_ANDROID_ONLY;
+  if (value === undefined || value === "false") return false;
+  if (value === "true") return true;
+  throw new Error("INVITATION_ANDROID_ONLY must be true or false");
+}
+
 function deploymentValues() {
   const origin = new URL(required("EXPO_PUBLIC_INVITATION_ORIGIN"));
   if (
@@ -24,9 +31,13 @@ function deploymentValues() {
       "EXPO_PUBLIC_INVITATION_ORIGIN must be an HTTPS origin without credentials, port, path, query, or fragment",
     );
   }
+  const androidOnly = androidOnlyMode();
+  if (androidOnly && process.env.IOS_APP_ID) {
+    throw new Error("IOS_APP_ID must be unset in Android-only mode");
+  }
   return {
     origin: origin.toString().replace(/\/$/, ""),
-    iosAppId: required("IOS_APP_ID"),
+    iosAppId: androidOnly ? undefined : required("IOS_APP_ID"),
     androidPackage: required("ANDROID_PACKAGE_NAME"),
     androidFingerprint: required("ANDROID_CERT_SHA256").toUpperCase(),
   };
@@ -63,21 +74,23 @@ function requireCanonicalComponent(components, source) {
 }
 
 async function verifyAssociations(values) {
-  const aasaResponse = await directResponse(
-    `${values.origin}/.well-known/apple-app-site-association`,
-    "application/json",
-    "AASA",
-  );
-  const aasa = await aasaResponse.json();
-  const details = aasa?.applinks?.details;
-  const appDetail = details?.find((detail) =>
-    detail?.appIDs?.includes(values.iosAppId),
-  );
-  if (!appDetail) throw new Error("AASA does not identify IOS_APP_ID");
-  requireCanonicalComponent(appDetail.components, "AASA");
-  console.log(
-    "PASS AASA: direct HTTP 200 JSON, no redirect, no-store; iOS app ID and canonical path/token query matched",
-  );
+  if (values.iosAppId) {
+    const aasaResponse = await directResponse(
+      `${values.origin}/.well-known/apple-app-site-association`,
+      "application/json",
+      "AASA",
+    );
+    const aasa = await aasaResponse.json();
+    const details = aasa?.applinks?.details;
+    const appDetail = details?.find((detail) =>
+      detail?.appIDs?.includes(values.iosAppId),
+    );
+    if (!appDetail) throw new Error("AASA does not identify IOS_APP_ID");
+    requireCanonicalComponent(appDetail.components, "AASA");
+    console.log(
+      "PASS AASA: direct HTTP 200 JSON, no redirect, no-store; iOS app ID and canonical path/token query matched",
+    );
+  }
 
   const assetResponse = await directResponse(
     `${values.origin}/.well-known/assetlinks.json`,
@@ -152,7 +165,9 @@ try {
   const values = deploymentValues();
   await verifyAssociations(values);
   await verifyFallback(values);
-  console.log(`PASS invitation deployment at ${values.origin}`);
+  console.log(
+    `PASS ${values.iosAppId ? "invitation" : "Android-only invitation"} deployment at ${values.origin}`,
+  );
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;

@@ -14,6 +14,13 @@ function required(name, pattern) {
   return value;
 }
 
+function androidOnlyMode() {
+  const value = process.env.INVITATION_ANDROID_ONLY;
+  if (value === undefined || value === "false") return false;
+  if (value === "true") return true;
+  throw new Error("INVITATION_ANDROID_ONLY must be true or false");
+}
+
 function deploymentValues() {
   const originValue = required(
     "EXPO_PUBLIC_INVITATION_ORIGIN",
@@ -38,11 +45,18 @@ function deploymentValues() {
     throw new Error("EXPO_PUBLIC_INVITATION_ORIGIN must be an HTTPS origin");
   }
 
+  const androidOnly = androidOnlyMode();
+  if (androidOnly && process.env.IOS_APP_ID) {
+    throw new Error("IOS_APP_ID must be unset in Android-only mode");
+  }
   const values = {
-    iosAppId: required(
-      "IOS_APP_ID",
-      /^[A-Z0-9]{10}\.[A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z0-9-]+)+$/,
-    ),
+    androidOnly,
+    iosAppId: androidOnly
+      ? undefined
+      : required(
+          "IOS_APP_ID",
+          /^[A-Z0-9]{10}\.[A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z0-9-]+)+$/,
+        ),
     androidPackage: required(
       "ANDROID_PACKAGE_NAME",
       /^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$/,
@@ -53,7 +67,7 @@ function deploymentValues() {
     ).toUpperCase(),
   };
   if (
-    values.iosAppId.startsWith("0000000000.") ||
+    values.iosAppId?.startsWith("0000000000.") ||
     values.androidFingerprint === Array(32).fill("00").join(":")
   ) {
     throw new Error(
@@ -68,16 +82,18 @@ function associationFiles(values) {
     "/": parentPath,
     "?": { token: tokenPattern },
   };
-  const aasa = {
-    applinks: {
-      details: [
-        {
-          appIDs: [values.iosAppId],
-          components: [canonicalComponent],
+  const aasa = values.androidOnly
+    ? undefined
+    : {
+        applinks: {
+          details: [
+            {
+              appIDs: [values.iosAppId],
+              components: [canonicalComponent],
+            },
+          ],
         },
-      ],
-    },
-  };
+      };
   const assetlinks = [
     {
       relation: ["delegate_permission/common.handle_all_urls"],
@@ -121,16 +137,21 @@ const fallback = `<!doctype html>
 </html>
 `;
 
-const headers = `/*
+function headers(androidOnly) {
+  const aasaHeader = androidOnly
+    ? ""
+    : `/.well-known/apple-app-site-association
+  Content-Type: application/json
+`;
+  return `/*
   Cache-Control: no-store, max-age=0
   Referrer-Policy: no-referrer
   X-Content-Type-Options: nosniff
   Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
-/.well-known/apple-app-site-association
-  Content-Type: application/json
-/.well-known/assetlinks.json
+${aasaHeader}/.well-known/assetlinks.json
   Content-Type: application/json
 `;
+}
 
 async function build() {
   const values = deploymentValues();
@@ -139,19 +160,24 @@ async function build() {
   await rm(output, { recursive: true, force: true });
   await mkdir(join(output, ".well-known"), { recursive: true });
   await mkdir(join(output, "invitations"), { recursive: true });
-  await Promise.all([
-    writeFile(
-      join(output, ".well-known/apple-app-site-association"),
-      `${JSON.stringify(aasa, null, 2)}\n`,
-    ),
+  const files = [
     writeFile(
       join(output, ".well-known/assetlinks.json"),
       `${JSON.stringify(assetlinks, null, 2)}\n`,
     ),
     writeFile(join(output, "index.html"), fallback),
     writeFile(join(output, "invitations/parent.html"), fallback),
-    writeFile(join(output, "_headers"), headers),
-  ]);
+    writeFile(join(output, "_headers"), headers(values.androidOnly)),
+  ];
+  if (aasa) {
+    files.push(
+      writeFile(
+        join(output, ".well-known/apple-app-site-association"),
+        `${JSON.stringify(aasa, null, 2)}\n`,
+      ),
+    );
+  }
+  await Promise.all(files);
   console.log("Built Cloudflare Pages invitation site");
 }
 
