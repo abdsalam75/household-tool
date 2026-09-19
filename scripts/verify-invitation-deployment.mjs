@@ -47,7 +47,12 @@ function deploymentValues() {
 }
 
 async function directResponse(url, expectedContentType, label) {
-  const response = await fetch(url, { redirect: "manual" });
+  let response;
+  try {
+    response = await fetch(url, { redirect: "manual" });
+  } catch {
+    throw new Error(`${label} request failed`);
+  }
   if (response.status !== 200) {
     throw new Error(`${label} returned HTTP ${response.status}, expected 200`);
   }
@@ -128,6 +133,7 @@ async function verifyAssociations(values) {
     statement.relation_extensions?.[RELATION]?.dynamic_app_link_components,
     [
       canonicalComponent(PARENT_PATH),
+      { "/": CHILD_PATH, "#": "?*", exclude: true },
       canonicalComponent(CHILD_PATH),
       { "/": "*", exclude: true },
     ],
@@ -153,37 +159,55 @@ async function verifyFallback(values) {
     ["unsupported-path", `/unsupported?token=${TEST_TOKEN}`],
   ];
 
+  const failures = [];
   for (const [label, path] of candidates) {
-    const response = await directResponse(
-      `${values.origin}${path}`,
-      "text/html",
-      `${label} fallback`,
-    );
-    if (response.headers.get("referrer-policy") !== "no-referrer") {
-      throw new Error(
-        `${label} fallback is missing Referrer-Policy: no-referrer`,
+    try {
+      const response = await directResponse(
+        `${values.origin}${path}`,
+        "text/html",
+        `${label} fallback`,
       );
+      if (response.headers.get("referrer-policy") !== "no-referrer") {
+        throw new Error(
+          `${label} fallback is missing Referrer-Policy: no-referrer`,
+        );
+      }
+      const body = await response.text();
+      if (!body.includes("Install or open Household Tool")) {
+        throw new Error(`${label} did not return the generic fallback`);
+      }
+      if (
+        body.includes(TEST_TOKEN) ||
+        /token=|member=|invite-status|invitation is valid/i.test(body)
+      ) {
+        throw new Error(`${label} disclosed link data or invitation state`);
+      }
+      console.log(
+        `PASS ${label} fallback: direct HTTP 200 generic HTML, no redirect, no-store, no-referrer`,
+      );
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message : `${label} failed`);
     }
-    const body = await response.text();
-    if (!body.includes("Install or open Household Tool")) {
-      throw new Error(`${label} did not return the generic fallback`);
-    }
-    if (
-      body.includes(TEST_TOKEN) ||
-      /token=|member=|invite-status|invitation is valid/i.test(body)
-    ) {
-      throw new Error(`${label} disclosed link data or invitation state`);
-    }
-    console.log(
-      `PASS ${label} fallback: direct HTTP 200 generic HTML, no redirect, no-store, no-referrer`,
-    );
+  }
+  if (failures.length) {
+    throw new Error(failures.join("\n"));
   }
 }
 
 try {
   const values = deploymentValues();
-  await verifyAssociations(values);
-  await verifyFallback(values);
+  const results = await Promise.allSettled([
+    verifyAssociations(values),
+    verifyFallback(values),
+  ]);
+  const failures = results
+    .filter((result) => result.status === "rejected")
+    .map((result) =>
+      result.reason instanceof Error ? result.reason.message : "Check failed",
+    );
+  if (failures.length) {
+    throw new Error(failures.join("\n"));
+  }
   console.log(
     `PASS ${values.iosAppId ? "invitation" : "Android-only invitation"} deployment at ${values.origin}`,
   );

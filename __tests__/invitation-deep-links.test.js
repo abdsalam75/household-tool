@@ -46,15 +46,24 @@ function runVerifierWithMockResponses(badFallback = false, overrides = {}) {
   const [aasa, assetlinks] = associationJsonBodies();
   assetlinks[0].relation_extensions[
     "delegate_permission/common.handle_all_urls"
-  ].dynamic_app_link_components.splice(1, 0, {
-    "/": "/invitations/child",
-    "?": { token: tokenPattern },
-  });
+  ].dynamic_app_link_components.splice(
+    1,
+    0,
+    {
+      "/": "/invitations/child",
+      "#": "?*",
+      exclude: true,
+    },
+    {
+      "/": "/invitations/child",
+      "?": { token: tokenPattern },
+    },
+  );
   const preload = `
     const aasa = ${JSON.stringify(aasa)};
     const assetlinks = ${JSON.stringify(assetlinks)};
     const components = assetlinks[0].relation_extensions["delegate_permission/common.handle_all_urls"].dynamic_app_link_components;
-    if (process.env.TEST_ASSOCIATION_MUTATION === "missing-child") components.splice(1, 1);
+    if (process.env.TEST_ASSOCIATION_MUTATION === "missing-child") components.splice(1, 2);
     if (process.env.TEST_ASSOCIATION_MUTATION === "broadened") components.push({ "/": "/other" });
     globalThis.fetch = async (input) => {
       const url = new URL(input);
@@ -72,7 +81,10 @@ function runVerifierWithMockResponses(badFallback = false, overrides = {}) {
           status: 200, headers: { ...common, "Content-Type": "application/json" },
         });
       }
-      return new Response("Install or open Household Tool", {
+      const fallback = process.env.TEST_FALLBACK_MUTATION === "missing" && url.pathname === "/invitations/child"
+        ? "Empty page" : process.env.TEST_FALLBACK_MUTATION === "disclosing" && url.pathname === "/invitations/child"
+        ? "Install or open Household Tool token=" + "a".repeat(43) : "Install or open Household Tool";
+      return new Response(fallback, {
         status: process.env.TEST_BAD_FALLBACK === "1" && url.pathname === "/invitations/child" && url.searchParams.has("token") ? 503 : 200,
         headers: { ...common, "Content-Type": "text/html" },
       });
@@ -368,6 +380,22 @@ describe("invitation deep-link configuration", () => {
     },
   );
 
+  it.each([
+    ["missing", "child valid-shaped did not return the generic fallback"],
+    [
+      "disclosing",
+      "child valid-shaped disclosed link data or invitation state",
+    ],
+  ])("rejects %s child fallback", (mutation, expected) => {
+    const result = runVerifierWithMockResponses(false, {
+      TEST_FALLBACK_MUTATION: mutation,
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(expected);
+    expect(result.stderr).not.toContain("a".repeat(43));
+    expect(result.stderr).not.toContain("token=");
+  });
+
   it("builds direct Pages association assets and one generic canonical and unknown-path fallback", () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "invitation-pages-"));
     try {
@@ -434,6 +462,7 @@ describe("invitation deep-link configuration", () => {
         ].dynamic_app_link_components,
       ).toEqual([
         { "/": "/invitations/parent", "?": { token: tokenPattern } },
+        { "/": "/invitations/child", "#": "?*", exclude: true },
         { "/": "/invitations/child", "?": { token: tokenPattern } },
         { "/": "*", exclude: true },
       ]);
@@ -493,6 +522,7 @@ describe("invitation deep-link configuration", () => {
         ].dynamic_app_link_components,
       ).toEqual([
         { "/": "/invitations/parent", "?": { token: tokenPattern } },
+        { "/": "/invitations/child", "#": "?*", exclude: true },
         { "/": "/invitations/child", "?": { token: tokenPattern } },
         { "/": "*", exclude: true },
       ]);

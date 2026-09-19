@@ -1,4 +1,4 @@
-# Parent invitation deep links
+# Invitation deep links
 
 The only parent invitation URL is:
 
@@ -9,6 +9,18 @@ https://<invite-domain>/invitations/parent?token=<43-character-opaque-token>
 The URL contains no household or member identifier. The mobile app stores only
 the opaque token and sends it to the existing server-side acceptance flow.
 The web fallback never validates the token or reports invitation state.
+
+Android staging also supports the canonical child invitation URL:
+
+```text
+https://household-tool-invitations.pages.dev/invitations/child?token=<43-character-opaque-token>
+```
+
+The staging app checks the exact origin, child path, one URL-safe token value,
+and absence of fragments or extra parameters before showing a generic child
+entry screen. It never validates, consumes, stores, or previews a child
+invitation. Child validation and PIN setup belong to #14. iOS staging child
+association and device testing belong to #54.
 
 ## Deployment values
 
@@ -81,8 +93,11 @@ rule. To enable iOS later, remove `INVITATION_ANDROID_ONLY` (or set it to
 `false`) and supply the real registered `IOS_APP_ID`. That full mode still
 requires the Apple ID and writes both association files. The build fails if
 any required value is absent or malformed. Both modes write an explicit
-`invitations/parent.html` asset for the extensionless canonical path and the
-same generic `index.html` fallback. There is no
+`invitations/parent.html` and `invitations/child.html` assets for the two
+extensionless paths and the same generic `index.html` fallback. The Android
+association adds the child path and excludes child URL fragments on Android 15+
+when dynamic App Links are supported. The AASA remains parent-only pending #54.
+There is no
 `404.html`, so Pages' single-page-app fallback serves that generic page for
 unmatched paths. The generated `_headers` sets `Content-Type:
 application/json` on generated association paths and `Cache-Control: no-store`,
@@ -143,22 +158,42 @@ npm run verify:invitation-deployment
 ```
 
 The verifier does not follow redirects. It checks a direct HTTP 200,
-`application/json`, and `no-store` for both association files; validates their
-application identifiers, signing fingerprint, exact path, and 43-character
-query matcher; and checks the valid, missing-token, malformed-token,
-extra-parameter, and unsupported-path browser responses for generic,
+`application/json`, and `no-store` for the required association files; validates
+their application identifiers, signing fingerprint, exact path components,
+43-character query matcher, and Android child-fragment exclusion. It checks
+valid-shaped, missing-token, malformed-token, extra-parameter, and fragment
+browser responses for both paths, plus an unsupported path, for generic,
 non-reflecting content. Successful output names each check and its response
 properties without printing a test token or token-bearing URL. The verifier's
 mocked test output is not deployment evidence; capture its output only when run
 against the real staging origin with matching deployment values.
 
-For an Android-only Pages deployment, set `INVITATION_ANDROID_ONLY=true` in
-the verification shell as well, leave `IOS_APP_ID` unset, and supply the same
-origin, Android package, and signing fingerprint. The verifier then checks
-assetlinks and all generic fallback cases without requesting AASA. This is
-Android-only deployment evidence; the issue's iOS acceptance criteria still
-require the real Apple ID, AASA response, signed iOS build, and physical iPhone
-result when iOS is enabled.
+For this Android-only staging deployment, use the matching public identifiers:
+
+```sh
+export EXPO_PUBLIC_INVITATION_ORIGIN=https://household-tool-invitations.pages.dev
+export INVITATION_ANDROID_ONLY=true
+unset IOS_APP_ID
+export ANDROID_PACKAGE_NAME=com.householdtool.mobile.staging
+export ANDROID_CERT_SHA256=F8:80:93:DA:99:49:4A:9E:7F:86:02:E4:4E:08:7C:4F:BC:B9:1E:B1:E4:54:49:86:6A:09:29:F9:A9:55:C4:F3
+npm run build:invitation-pages
+npm run verify:invitation-deployment
+```
+
+The build writes `dist/invitation-pages`; deploy that output through the
+existing Cloudflare Pages project, then run the live verifier. A local build
+or mocked verifier result is not live deployment evidence. The Android-only
+verifier does not request AASA. iOS staging work is tracked in #54.
+
+Android's static path filters ignore query parameters, and Android versions
+before 15 ignore dynamic query and fragment rules. On Android 15+, a dynamic
+query dictionary may match a URL with extra parameters. Therefore the OS may
+launch the app for a malformed URL even with the narrow path filters. The app
+checks the complete canonical child URL and shows only a generic invalid-link
+message for a malformed child URL. This platform limit prevents a claim that
+every noncanonical URL is rejected by OS routing on all Android versions.
+See [Android's dynamic App Links guidance](https://developer.android.com/training/app-links/configure-assetlinks)
+and [URI relative filter matching](https://developer.android.com/guide/topics/manifest/uri-relative-filter-group-element).
 
 ## Physical-device staging checklist
 
@@ -184,10 +219,19 @@ PASS/FAIL. Never record the URL or token.
 
 ### Android
 
-- Install the matching staging build, connect the device to the internet, and
+- Build the `preview` profile with `npx eas-cli@latest build --profile preview
+  --platform android` after authenticating to the owner's EAS account. Record
+  the completed APK build identifier and version. Confirm the signed APK uses
+  `com.householdtool.mobile.staging` and the association fingerprint above.
+  EAS credentials and APK signing material must stay outside Git.
+- Install the matching signed staging APK fresh on a physical Android device,
+  connect the device to the internet, authorize USB debugging, and
   wait for link verification. Reset and request verification when needed:
 
   ```sh
+  adb devices -l
+  adb shell getprop ro.product.model
+  adb shell getprop ro.build.version.release
   adb shell pm set-app-links --package <STAGING_ANDROID_PACKAGE_NAME> 0 all
   adb shell pm verify-app-links --re-verify <STAGING_ANDROID_PACKAGE_NAME>
   adb shell pm get-app-links <STAGING_ANDROID_PACKAGE_NAME>
@@ -195,13 +239,17 @@ PASS/FAIL. Never record the URL or token.
 
 - Confirm the staging domain reports `verified` and link handling is enabled
   for the app in system settings.
-- Send the canonical URL to the device and tap it from a supported browser or
-  messaging app. Confirm the app opens into the same safe sign-in/confirmation
-  flow and does not show the token as household data.
+- Send the canonical child URL to the device and tap it from a messaging app.
+  Confirm Household Tool opens at the generic child-invitation entry screen.
+  The screen must not show invitation state, household/member data, or the
+  token. A malformed child URL that Android still routes must show the generic
+  invalid-invitation message.
 - Cancel rather than accept unless the membership change is authorized.
 
-Record the device model, Android version, build identifier/version,
-verification result, test time, and PASS/FAIL. Never record the URL or token.
+Record the device model, Android version, build identifier/version, package,
+verified-domain result, supported-links setting, test time, and PASS/FAIL in
+the redacted [issue #53 evidence checklist](evidence/issue-53-android-staging.md).
+Never record the URL or token.
 
 ### Browser fallback and invalid-link safety
 

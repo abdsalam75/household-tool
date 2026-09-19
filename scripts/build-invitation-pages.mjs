@@ -1,6 +1,6 @@
 /* global process, URL, console */
 
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 const parentPath = "/invitations/parent";
@@ -107,6 +107,7 @@ function associationFiles(values) {
         "delegate_permission/common.handle_all_urls": {
           dynamic_app_link_components: [
             canonicalComponent,
+            { "/": childPath, "#": "?*", exclude: true },
             { "/": childPath, "?": { token: tokenPattern } },
             { "/": "*", exclude: true },
           ],
@@ -155,6 +156,46 @@ ${aasaHeader}/.well-known/assetlinks.json
 `;
 }
 
+async function validateOutput(output, values) {
+  const [associationText, index, parent, child, headerText] = await Promise.all(
+    [
+      readFile(join(output, ".well-known/assetlinks.json"), "utf8"),
+      readFile(join(output, "index.html"), "utf8"),
+      readFile(join(output, "invitations/parent.html"), "utf8"),
+      readFile(join(output, "invitations/child.html"), "utf8"),
+      readFile(join(output, "_headers"), "utf8"),
+    ],
+  );
+  const statement = JSON.parse(associationText);
+  const expectedComponents = [
+    { "/": parentPath, "?": { token: tokenPattern } },
+    { "/": childPath, "#": "?*", exclude: true },
+    { "/": childPath, "?": { token: tokenPattern } },
+    { "/": "*", exclude: true },
+  ];
+  const actualComponents =
+    statement?.[0]?.relation_extensions?.[
+      "delegate_permission/common.handle_all_urls"
+    ]?.dynamic_app_link_components;
+  if (
+    statement.length !== 1 ||
+    statement[0]?.target?.package_name !== values.androidPackage ||
+    statement[0]?.target?.sha256_cert_fingerprints?.[0] !==
+      values.androidFingerprint ||
+    JSON.stringify(actualComponents) !== JSON.stringify(expectedComponents) ||
+    index !== parent ||
+    index !== child ||
+    !index.includes("Install or open Household Tool") ||
+    /token=|member=|invite-status|invitation is valid/i.test(index) ||
+    !headerText.includes("Cache-Control: no-store") ||
+    !headerText.includes(
+      "/.well-known/assetlinks.json\n  Content-Type: application/json",
+    )
+  ) {
+    throw new Error("Generated invitation site failed canonical safety checks");
+  }
+}
+
 async function build() {
   const values = deploymentValues();
   const { aasa, assetlinks } = associationFiles(values);
@@ -181,6 +222,12 @@ async function build() {
     );
   }
   await Promise.all(files);
+  try {
+    await validateOutput(output, values);
+  } catch (error) {
+    await rm(output, { recursive: true, force: true });
+    throw error;
+  }
   console.log("Built Cloudflare Pages invitation site");
 }
 
