@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import type { ParentAccount } from "../auth/types";
+import { ChildProfilesFlow } from "./ChildProfilesFlow";
 import { HouseholdView, type HouseholdViewState } from "./HouseholdView";
 import { isRuntimeNamedTimeZone, proposeDeviceTimeZone } from "./timeZone";
 import type { HouseholdService } from "./types";
@@ -28,6 +29,7 @@ export function HouseholdFlow({
     timeZone: "",
     action: null,
   });
+  const [showChildren, setShowChildren] = useState(false);
 
   const load = useCallback(
     async (retry = false) => {
@@ -234,6 +236,15 @@ export function HouseholdFlow({
     }));
   }, [service]);
 
+  if (showChildren && state.phase === "settings") {
+    return (
+      <ChildProfilesFlow
+        service={service}
+        onBack={() => setShowChildren(false)}
+      />
+    );
+  }
+
   return (
     <HouseholdView
       onChangeTimeZone={changeTimeZone}
@@ -243,6 +254,7 @@ export function HouseholdFlow({
       onSignOut={onSignOut}
       onCreateInvitation={() => void createInvitation()}
       onRevokeInvitation={() => void revokeInvitation()}
+      onManageChildren={() => setShowChildren(true)}
       state={{ ...state, action: signingOut ? "signout" : state.action }}
     />
   );

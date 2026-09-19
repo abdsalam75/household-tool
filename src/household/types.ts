@@ -33,4 +33,17 @@ export type HouseholdService = {
   loadParentInvitation(): Promise<ParentInvitationOutcome>;
   createParentInvitation(): Promise<ParentInvitationOutcome>;
   revokeParentInvitation(): Promise<ParentInvitationOutcome>;
+  listChildProfiles(): Promise<ChildProfilesOutcome>;
+  createChildProfile(name: string): Promise<ChildProfileOutcome>;
+  deactivateChildProfile(childId: string): Promise<ChildProfileOutcome>;
+};
+
+export type ChildProfile = { id: string; displayName: string; active: boolean };
+export type ChildProfilesOutcome = {
+  profiles: ChildProfile[] | null;
+  message?: string;
+};
+export type ChildProfileOutcome = {
+  profile: ChildProfile | null;
+  message?: string;
 };

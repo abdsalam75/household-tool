@@ -34,6 +34,7 @@ function renderText(state: HouseholdViewState) {
       onSignOut: noOp,
       onCreateInvitation: noOp,
       onRevokeInvitation: noOp,
+      onManageChildren: noOp,
     }),
   ).join(" ");
 }

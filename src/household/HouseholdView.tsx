@@ -49,6 +49,7 @@ type HouseholdViewProps = {
   onSignOut: () => void;
   onCreateInvitation: () => void;
   onRevokeInvitation: () => void;
+  onManageChildren: () => void;
 };
 
 type ButtonProps = {
@@ -124,6 +125,7 @@ export function HouseholdView({
   onSignOut,
   onCreateInvitation,
   onRevokeInvitation,
+  onManageChildren,
 }: HouseholdViewProps) {
   const busy = state.action !== null;
 
@@ -219,6 +221,20 @@ export function HouseholdView({
           loadingLabel={setup ? "Creating household…" : "Saving…"}
           onPress={setup ? onCreate : onSave}
         />
+        {!setup ? (
+          <View style={styles.invitationSection}>
+            <Text accessibilityRole="header" style={styles.sectionTitle}>
+              Children
+            </Text>
+            <Button
+              disabled={busy}
+              label="Manage child profiles"
+              loading={false}
+              loadingLabel=""
+              onPress={onManageChildren}
+            />
+          </View>
+        ) : null}
         {!setup ? (
           <View style={styles.invitationSection}>
             <Text accessibilityRole="header" style={styles.sectionTitle}>

@@ -1,4 +1,7 @@
 import type {
+  ChildProfile,
+  ChildProfileOutcome,
+  ChildProfilesOutcome,
   HouseholdOutcome,
   ParentInvitation,
   ParentInvitationOutcome,
@@ -31,6 +34,33 @@ const INVITATION_RETRY =
   "Parent invitations are unavailable. Please try again.";
 const INVITATION_AUTH = "Parent invitations are unavailable for this account.";
 const PARENT_LIMIT = "This household already has two active parents.";
+const CHILD_RETRY = "Child profiles are unavailable. Please try again.";
+const CHILD_AUTH = "Child profiles are unavailable for this account.";
+const CHILD_NAME = "Enter a child name.";
+const CHILD_DUPLICATE = "A child with this name already exists.";
+
+function childProfileFrom(value: unknown): ChildProfile | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  if (
+    typeof row.child_id !== "string" ||
+    typeof row.display_name !== "string" ||
+    typeof row.active !== "boolean"
+  )
+    return null;
+  return {
+    id: row.child_id,
+    displayName: row.display_name,
+    active: row.active,
+  };
+}
+
+function childMessage(error: RpcError): string {
+  if (error.code === "42501") return CHILD_AUTH;
+  if (error.code === "22023") return CHILD_NAME;
+  if (error.code === "23505") return CHILD_DUPLICATE;
+  return CHILD_RETRY;
+}
 
 function firstRow(data: unknown): Record<string, unknown> | null {
   const value = Array.isArray(data) ? data[0] : data;
@@ -103,6 +133,48 @@ export class HouseholdService implements HouseholdServiceContract {
       return { settings: settingsFrom(data) };
     } catch {
       return { settings: null, message: RETRY_ERROR };
+    }
+  }
+
+  async listChildProfiles(): Promise<ChildProfilesOutcome> {
+    try {
+      const { data, error } = await this.client.rpc("list_child_profiles");
+      if (error) return { profiles: null, message: childMessage(error) };
+      if (!Array.isArray(data)) return { profiles: null, message: CHILD_RETRY };
+      const profiles = data.map(childProfileFrom);
+      if (profiles.some((profile) => profile === null))
+        return { profiles: null, message: CHILD_RETRY };
+      return { profiles: profiles as ChildProfile[] };
+    } catch {
+      return { profiles: null, message: CHILD_RETRY };
+    }
+  }
+
+  async createChildProfile(name: string): Promise<ChildProfileOutcome> {
+    const cleaned = name.trim();
+    if (!cleaned) return { profile: null, message: CHILD_NAME };
+    return this.childMutation("create_child_profile", {
+      requested_display_name: cleaned,
+    });
+  }
+
+  async deactivateChildProfile(childId: string): Promise<ChildProfileOutcome> {
+    return this.childMutation("deactivate_child_profile", {
+      requested_child_id: childId,
+    });
+  }
+
+  private async childMutation(
+    operation: "create_child_profile" | "deactivate_child_profile",
+    parameters: Record<string, string>,
+  ): Promise<ChildProfileOutcome> {
+    try {
+      const { data, error } = await this.client.rpc(operation, parameters);
+      if (error) return { profile: null, message: childMessage(error) };
+      const profile = childProfileFrom(Array.isArray(data) ? data[0] : data);
+      return profile ? { profile } : { profile: null, message: CHILD_RETRY };
+    } catch {
+      return { profile: null, message: CHILD_RETRY };
     }
   }
 
