@@ -5,6 +5,7 @@ import {
   type ChildProfilesViewState,
 } from "./ChildProfilesView";
 import type { HouseholdService } from "./types";
+import { ChildInvitationFlow } from "./ChildInvitationFlow";
 
 const EMPTY_NAME = "Enter a child name.";
 
@@ -14,7 +15,12 @@ export function ChildProfilesFlow({
 }: {
   service: Pick<
     HouseholdService,
-    "listChildProfiles" | "createChildProfile" | "deactivateChildProfile"
+    | "listChildProfiles"
+    | "createChildProfile"
+    | "deactivateChildProfile"
+    | "loadChildInvitation"
+    | "createChildInvitation"
+    | "revokeChildInvitation"
   >;
   onBack: () => void;
 }) {
@@ -26,6 +32,9 @@ export function ChildProfilesFlow({
     confirming: null,
   });
   const pendingRef = useRef(false);
+  const [selectedInvitationId, setSelectedInvitationId] = useState<
+    string | null
+  >(null);
 
   const load = useCallback(async () => {
     if (pendingRef.current) return;
@@ -129,6 +138,22 @@ export function ChildProfilesFlow({
     pendingRef.current = false;
   }, [service, state.confirming, state.profiles]);
 
+  const selectedInvitation = state.profiles.find(
+    (profile) => profile.id === selectedInvitationId,
+  );
+  if (selectedInvitation?.active && !selectedInvitation.activationComplete) {
+    return (
+      <ChildInvitationFlow
+        child={selectedInvitation}
+        service={service}
+        onBack={() => {
+          setSelectedInvitationId(null);
+          void load();
+        }}
+      />
+    );
+  }
+
   return (
     <ChildProfilesView
       state={state}
@@ -155,6 +180,7 @@ export function ChildProfilesFlow({
         setState((current) => ({ ...current, confirming: null }))
       }
       onConfirmDeactivate={() => void deactivate()}
+      onInvite={(id) => setSelectedInvitationId(id)}
     />
   );
 }

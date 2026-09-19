@@ -18,14 +18,35 @@ export function createHouseholdService(): HouseholdService {
       flowType: "pkce",
     },
   });
-  return new HouseholdService(client, invitationConfig.parentInvitationUrl, {
-    getItem: () => secureSessionStorage.getItem(PARENT_INVITATION_CACHE_KEY),
-    setItem: (value) =>
-      secureSessionStorage.setItem(PARENT_INVITATION_CACHE_KEY, value),
-    removeItem: () =>
-      secureSessionStorage.removeItem(PARENT_INVITATION_CACHE_KEY),
-  });
+  return new HouseholdService(
+    client,
+    invitationConfig.parentInvitationUrl,
+    {
+      getItem: () => secureSessionStorage.getItem(PARENT_INVITATION_CACHE_KEY),
+      setItem: (value) =>
+        secureSessionStorage.setItem(PARENT_INVITATION_CACHE_KEY, value),
+      removeItem: () =>
+        secureSessionStorage.removeItem(PARENT_INVITATION_CACHE_KEY),
+    },
+    invitationConfig.childInvitationUrl,
+    {
+      getItem: (childId) =>
+        secureSessionStorage.getItem(
+          `${CHILD_INVITATION_CACHE_KEY}-${childId}`,
+        ),
+      setItem: (childId, value) =>
+        secureSessionStorage.setItem(
+          `${CHILD_INVITATION_CACHE_KEY}-${childId}`,
+          value,
+        ),
+      removeItem: (childId) =>
+        secureSessionStorage.removeItem(
+          `${CHILD_INVITATION_CACHE_KEY}-${childId}`,
+        ),
+    },
+  );
 }
 
 export const PARENT_INVITATION_CACHE_KEY =
   "household-tool-parent-invitation-url";
+export const CHILD_INVITATION_CACHE_KEY = "household-tool-child-invitation-url";

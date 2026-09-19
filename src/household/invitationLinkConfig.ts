@@ -1,10 +1,12 @@
 import type { AppEnvironment } from "../auth/config";
 
 export const PARENT_INVITATION_PATH = "/invitations/parent";
+export const CHILD_INVITATION_PATH = "/invitations/child";
 
 export type InvitationLinkConfig = {
   invitationOrigin: string;
   parentInvitationUrl: string;
+  childInvitationUrl: string;
 };
 
 function isEnvironment(value: string | undefined): value is AppEnvironment {
@@ -48,6 +50,7 @@ export function readInvitationLinkConfig(
   return {
     invitationOrigin,
     parentInvitationUrl: `${invitationOrigin}${PARENT_INVITATION_PATH}`,
+    childInvitationUrl: `${invitationOrigin}${CHILD_INVITATION_PATH}`,
   };
 }
 

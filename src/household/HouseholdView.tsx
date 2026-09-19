@@ -94,7 +94,7 @@ function Button({
   );
 }
 
-function InvitationQr({ url }: { url: string }) {
+export function InvitationQr({ url }: { url: string }) {
   const matrix = encodeQr(url);
   return (
     <View

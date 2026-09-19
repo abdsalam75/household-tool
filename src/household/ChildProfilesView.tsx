@@ -29,6 +29,7 @@ type Props = {
   onAskDeactivate: (id: string) => void;
   onCancelDeactivate: () => void;
   onConfirmDeactivate: () => void;
+  onInvite: (id: string) => void;
 };
 
 function Action({
@@ -62,6 +63,7 @@ export function ChildProfilesView({
   onAskDeactivate,
   onCancelDeactivate,
   onConfirmDeactivate,
+  onInvite,
 }: Props) {
   const busy = state.pending !== null;
   const candidate = state.profiles.find(
@@ -113,6 +115,17 @@ export function ChildProfilesView({
                   <Text style={styles.body}>
                     {profile.active ? "Active" : "Deactivated"}
                   </Text>
+                  {!profile.active || profile.activationComplete ? (
+                    <Text style={styles.body}>
+                      Child invitations unavailable for this profile.
+                    </Text>
+                  ) : (
+                    <Action
+                      label={`Invite ${profile.displayName}`}
+                      onPress={() => onInvite(profile.id)}
+                      disabled={busy || state.confirming !== null}
+                    />
+                  )}
                   {profile.active ? (
                     <Action
                       label={`Deactivate ${profile.displayName}`}

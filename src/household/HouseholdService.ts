@@ -25,6 +25,12 @@ export type ParentInvitationCache = {
   removeItem(): Promise<void>;
 };
 
+export type ChildInvitationCache = {
+  getItem(childId: string): Promise<string | null>;
+  setItem(childId: string, value: string): Promise<void>;
+  removeItem(childId: string): Promise<void>;
+};
+
 const RETRY_ERROR = "Household settings are unavailable. Please try again.";
 const ZONE_ERROR =
   "Enter a valid named IANA time zone, such as Africa/Lagos or Etc/UTC.";
@@ -38,6 +44,12 @@ const CHILD_RETRY = "Child profiles are unavailable. Please try again.";
 const CHILD_AUTH = "Child profiles are unavailable for this account.";
 const CHILD_NAME = "Enter a child name.";
 const CHILD_DUPLICATE = "A child with this name already exists.";
+const CHILD_INVITATION_RETRY =
+  "Child invitations are unavailable. Please try again.";
+const CHILD_INVITATION_AUTH =
+  "Child invitations are unavailable for this account.";
+const CHILD_INVITATION_INELIGIBLE =
+  "This child is unavailable for invitations.";
 
 function childProfileFrom(value: unknown): ChildProfile | null {
   if (!value || typeof value !== "object") return null;
@@ -52,6 +64,7 @@ function childProfileFrom(value: unknown): ChildProfile | null {
     id: row.child_id,
     displayName: row.display_name,
     active: row.active,
+    activationComplete: row.activation_complete === true,
   };
 }
 
@@ -119,11 +132,19 @@ function invitationMessage(error: RpcError) {
   return INVITATION_RETRY;
 }
 
+function childInvitationMessage(error: RpcError) {
+  if (error.code === "42501") return CHILD_INVITATION_AUTH;
+  if (error.code === "23514") return CHILD_INVITATION_INELIGIBLE;
+  return CHILD_INVITATION_RETRY;
+}
+
 export class HouseholdService implements HouseholdServiceContract {
   constructor(
     private readonly client: HouseholdRpcClient,
     private readonly invitationUrlBase = "https://household.invalid/invitations/parent",
     private readonly invitationCache?: ParentInvitationCache,
+    private readonly childInvitationUrlBase = "https://household.invalid/invitations/child",
+    private readonly childInvitationCache?: ChildInvitationCache,
   ) {}
 
   async load(): Promise<HouseholdOutcome> {
@@ -267,11 +288,110 @@ export class HouseholdService implements HouseholdServiceContract {
     }
   }
 
-  private isInvitationUrl(candidate: string) {
+  async loadChildInvitation(childId: string): Promise<ParentInvitationOutcome> {
     try {
-      const expected = new URL(this.invitationUrlBase);
+      const { data, error } = await this.client.rpc(
+        "get_child_invitation_status",
+        { requested_child_id: childId },
+      );
+      if (error)
+        return { invitation: null, message: childInvitationMessage(error) };
+      const invitation = invitationFrom(data);
+      if (invitation?.status !== "active") {
+        await this.childInvitationCache
+          ?.removeItem(childId)
+          .catch(() => undefined);
+        return { invitation };
+      }
+      const cached = await this.childInvitationCache
+        ?.getItem(childId)
+        .catch(() => null);
+      if (!cached) return { invitation };
+      try {
+        const parsed = JSON.parse(cached) as Record<string, unknown>;
+        if (
+          parsed.createdAt === invitation.createdAt &&
+          parsed.expiresAt === invitation.expiresAt &&
+          typeof parsed.url === "string" &&
+          this.isInvitationUrl(parsed.url, this.childInvitationUrlBase)
+        ) {
+          return { invitation: { ...invitation, url: parsed.url } };
+        }
+      } catch {
+        // Invalid secure cache entries are never displayed.
+      }
+      return { invitation };
+    } catch {
+      return { invitation: null, message: CHILD_INVITATION_RETRY };
+    }
+  }
+
+  async createChildInvitation(
+    childId: string,
+  ): Promise<ParentInvitationOutcome> {
+    try {
+      const { data, error } = await this.client.rpc("create_child_invitation", {
+        requested_child_id: childId,
+      });
+      if (error)
+        return { invitation: null, message: childInvitationMessage(error) };
+      const row = firstRow(data);
+      if (
+        !row ||
+        typeof row.link_token !== "string" ||
+        !/^[A-Za-z0-9_-]{43}$/.test(row.link_token) ||
+        typeof row.created_at !== "string" ||
+        typeof row.expires_at !== "string"
+      ) {
+        return { invitation: null, message: CHILD_INVITATION_RETRY };
+      }
+      const url = new URL(this.childInvitationUrlBase);
+      url.search = "";
+      url.hash = "";
+      url.searchParams.set("token", row.link_token);
+      const invitation: ParentInvitation = {
+        status: "active",
+        createdAt: row.created_at,
+        expiresAt: row.expires_at,
+        url: url.toString(),
+      };
+      await this.childInvitationCache
+        ?.setItem(childId, JSON.stringify(invitation))
+        .catch(() => undefined);
+      return { invitation };
+    } catch {
+      return { invitation: null, message: CHILD_INVITATION_RETRY };
+    }
+  }
+
+  async revokeChildInvitation(
+    childId: string,
+  ): Promise<ParentInvitationOutcome> {
+    try {
+      const { data, error } = await this.client.rpc("revoke_child_invitation", {
+        requested_child_id: childId,
+      });
+      if (error)
+        return { invitation: null, message: childInvitationMessage(error) };
+      const invitation = invitationFrom(data);
+      if (invitation)
+        await this.childInvitationCache
+          ?.removeItem(childId)
+          .catch(() => undefined);
+      return invitation
+        ? { invitation }
+        : { invitation: null, message: CHILD_INVITATION_RETRY };
+    } catch {
+      return { invitation: null, message: CHILD_INVITATION_RETRY };
+    }
+  }
+
+  private isInvitationUrl(candidate: string, base = this.invitationUrlBase) {
+    try {
+      const expected = new URL(base);
       const actual = new URL(candidate);
       return (
+        candidate === actual.toString() &&
         actual.origin === expected.origin &&
         actual.pathname === expected.pathname &&
         actual.hash === "" &&
