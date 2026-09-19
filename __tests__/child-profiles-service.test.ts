@@ -20,7 +20,14 @@ describe("child profile RPC adapter", () => {
       profiles: [],
     });
     await expect(service.listChildProfiles()).resolves.toEqual({
-      profiles: [{ id: "child-id", displayName: "Ada", active: true }],
+      profiles: [
+        {
+          id: "child-id",
+          displayName: "Ada",
+          active: true,
+          activationComplete: false,
+        },
+      ],
     });
     expect(client.rpc).toHaveBeenCalledWith("list_child_profiles");
   });
@@ -34,7 +41,12 @@ describe("child profile RPC adapter", () => {
     });
     expect(client.rpc).not.toHaveBeenCalled();
     await expect(service.createChildProfile(" Ada ")).resolves.toEqual({
-      profile: { id: "child-id", displayName: "Ada", active: true },
+      profile: {
+        id: "child-id",
+        displayName: "Ada",
+        active: true,
+        activationComplete: false,
+      },
     });
     expect(client.rpc).toHaveBeenCalledWith("create_child_profile", {
       requested_display_name: "Ada",

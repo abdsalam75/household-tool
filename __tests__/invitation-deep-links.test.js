@@ -210,6 +210,7 @@ describe("invitation deep-link configuration", () => {
     ).toEqual({
       invitationOrigin: "https://invite.example.test",
       parentInvitationUrl: "https://invite.example.test/invitations/parent",
+      childInvitationUrl: "https://invite.example.test/invitations/child",
     });
 
     for (const origin of [

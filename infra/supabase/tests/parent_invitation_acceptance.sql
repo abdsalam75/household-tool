@@ -172,14 +172,15 @@ SELECT pg_temp.assert_true(
 );
 
 BEGIN;
-ALTER TABLE public.parent_invitations
-  DROP CONSTRAINT parent_invitations_role_is_parent;
+INSERT INTO public.members (id, household_id, display_name, role, active)
+VALUES ('d1000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000001', 'Wrong-role target', 'child', true);
 INSERT INTO public.parent_invitations (
-  household_id, intended_role, token_digest, created_by, created_at, expires_at
+  household_id, intended_role, child_profile_id, token_digest, created_by, created_at, expires_at
 )
 VALUES (
   'd0000000-0000-0000-0000-000000000001',
   'child',
+  'd1000000-0000-0000-0000-000000000001',
   extensions.digest(repeat('h', 43), 'sha256'),
   '40000000-0000-0000-0000-000000000001',
   statement_timestamp(),

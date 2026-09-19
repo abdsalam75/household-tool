@@ -15,6 +15,7 @@ describe("Supabase database migrations", () => {
       "20260918223000_accept_parent_invitations.sql",
       "20260918224500_fix_parent_invitation_expiry_race.sql",
       "20260919100000_administer_child_profiles.sql",
+      "20260919110000_add_child_invitations.sql",
     ]);
     for (const migration of migrations) {
       expect(migration).toMatch(/^\d{14}_[a-z0-9]+(?:_[a-z0-9]+)*\.sql$/);

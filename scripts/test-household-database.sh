@@ -38,6 +38,7 @@ COMPOSE_PROJECT_NAME="$project_name" "${repo_root}/scripts/apply-supabase-migrat
 "${psql[@]}" <"${repo_root}/infra/supabase/tests/parent_invitations.sql"
 "${psql[@]}" <"${repo_root}/infra/supabase/tests/parent_invitation_acceptance.sql"
 "${psql[@]}" <"${repo_root}/infra/supabase/tests/child_profiles.sql"
+"${psql[@]}" <"${repo_root}/infra/supabase/tests/child_invitations.sql"
 
 "${psql[@]}" --command "INSERT INTO auth.users (id, email) VALUES ('40000000-0000-0000-0000-000000000009', 'concurrent-inviter@example.test'), ('40000000-0000-0000-0000-000000000010', 'concurrent-recipient@example.test'); INSERT INTO public.households (id, timezone, creator_account_id) VALUES ('d0000000-0000-0000-0000-000000000004', 'Africa/Lagos', '40000000-0000-0000-0000-000000000009'); INSERT INTO public.members (household_id, account_id, display_name, role) VALUES ('d0000000-0000-0000-0000-000000000004', '40000000-0000-0000-0000-000000000009', 'Concurrent inviter', 'parent'); INSERT INTO public.parent_invitations (household_id, token_digest, created_by, created_at, expires_at) VALUES ('d0000000-0000-0000-0000-000000000004', extensions.digest(repeat('i', 43), 'sha256'), '40000000-0000-0000-0000-000000000009', statement_timestamp(), statement_timestamp() + interval '24 hours');"
 

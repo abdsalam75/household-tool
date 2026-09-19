@@ -26,6 +26,9 @@ function service() {
     deactivateChildProfile: jest.fn(async () => ({
       profile: { ...ada, active: false },
     })),
+    loadChildInvitation: jest.fn(async () => ({ invitation: null })),
+    createChildInvitation: jest.fn(async () => ({ invitation: null })),
+    revokeChildInvitation: jest.fn(async () => ({ invitation: null })),
   };
 }
 
@@ -211,5 +214,35 @@ describe("child profile administration screen", () => {
     );
     expect(textOf(renderer)).toMatch(/Ada Active/);
     expect(textOf(renderer)).toMatch(/unavailable for this account/);
+  });
+
+  it("opens invitations only for eligible children and names unavailable profiles safely", async () => {
+    const mock = service();
+    mock.listChildProfiles.mockResolvedValue({
+      profiles: [
+        { ...ada, activationComplete: false },
+        { ...ben, activationComplete: true },
+        {
+          id: "old",
+          displayName: "Cal",
+          active: false,
+          activationComplete: false,
+        },
+      ],
+    });
+    const renderer = await mount(mock);
+    expect(button(renderer, "Invite Ada")).toBeDefined();
+    expect(button(renderer, "Invite Ben")).toBeUndefined();
+    expect(button(renderer, "Invite Cal")).toBeUndefined();
+    expect(textOf(renderer)).toMatch(
+      /invitations unavailable for this profile/,
+    );
+    await act(async () => button(renderer, "Invite Ada").props.onPress());
+    expect(mock.loadChildInvitation).toHaveBeenCalledWith("opaque-ada");
+    expect(JSON.stringify(renderer.toJSON())).toMatch(/This invitation is for/);
+    await act(async () =>
+      button(renderer, "Back to child profiles").props.onPress(),
+    );
+    expect(button(renderer, "Invite Ada")).toBeDefined();
   });
 });
