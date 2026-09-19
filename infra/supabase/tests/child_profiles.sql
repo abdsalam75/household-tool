@@ -28,6 +28,15 @@ SELECT
   pg_temp.session_count() AS sessions,
   (SELECT count(*) FROM public.parent_invitations) AS invitations;
 
+SELECT pg_temp.assert_true(
+  pg_get_function_arguments('public.list_child_profiles()'::regprocedure) = ''
+    AND pg_get_function_arguments('public.create_child_profile(text)'::regprocedure) = 'requested_display_name text'
+    AND pg_get_function_arguments('public.deactivate_child_profile(uuid)'::regprocedure) = 'requested_child_id uuid'
+    AND NOT has_table_privilege('authenticated', 'public.members', 'INSERT')
+    AND NOT has_table_privilege('authenticated', 'public.members', 'UPDATE'),
+  'profile API accepts no household or role and direct member writes remain denied'
+);
+
 INSERT INTO auth.users (id, email) VALUES
   ('50000000-0000-0000-0000-000000000001', 'parent-a@example.test'),
   ('50000000-0000-0000-0000-000000000002', 'child-a@example.test'),
@@ -102,7 +111,7 @@ BEGIN
 END;
 $$;
 SELECT pg_temp.assert_true(
-  (SELECT display_name = 'Ada' AND active FROM public.create_child_profile(' Ada ')),
+  (SELECT display_name = 'Ada Lovelace' AND active FROM public.create_child_profile(' Ada Lovelace ')),
   'another household may use same name'
 );
 RESET ROLE;

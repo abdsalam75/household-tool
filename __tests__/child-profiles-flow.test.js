@@ -143,6 +143,23 @@ describe("child profile administration screen", () => {
     expect(button(renderer, "Deactivate Ada")).toBeDefined();
   });
 
+  it("keeps the entered name and existing profiles after create is denied", async () => {
+    const mock = service();
+    mock.listChildProfiles.mockResolvedValue({ profiles: [ben] });
+    mock.createChildProfile.mockResolvedValue({
+      profile: null,
+      message: "Child profiles are unavailable for this account.",
+    });
+    const renderer = await mount(mock);
+    await act(async () =>
+      renderer.root.findByType(TextInput).props.onChangeText("Cara"),
+    );
+    await act(async () => button(renderer, "Add child").props.onPress());
+    expect(textOf(renderer)).toMatch(/Ben Active/);
+    expect(textOf(renderer)).toMatch(/unavailable for this account/);
+    expect(renderer.root.findByType(TextInput).props.value).toBe("Cara");
+  });
+
   it("requires named confirmation and changes only the selected active child", async () => {
     const mock = service();
     mock.listChildProfiles.mockResolvedValue({
