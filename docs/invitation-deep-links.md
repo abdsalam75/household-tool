@@ -39,6 +39,19 @@ The mobile build config preserves the `household-tool-local`,
 and authentication callbacks. Only staging and production invitation origins
 should be associated with distributable builds.
 
+For an installable Android staging build, the EAS `preview` profile sets
+`EXPO_PUBLIC_APP_ENV=staging`, the staging Pages invitation origin, and
+`ANDROID_PACKAGE_NAME=com.householdtool.mobile.staging`. Its Android
+`buildType` is `apk` and its distribution is `internal`. Run
+`eas build --profile preview --platform android` to build only Android; no iOS
+build is requested. The EAS project ID is in `app.json`. The APK is signed by
+EAS, so obtain the SHA-256 fingerprint for the certificate used by the
+installed APK and use that exact fingerprint with the same package name in
+the Pages `ANDROID_CERT_SHA256` and `ANDROID_PACKAGE_NAME` values. Do not add
+the keystore or signing credentials to Git. A failed EAS API request does not
+produce an APK; retry the build and record its completed artifact before
+claiming signed-build or device evidence.
+
 ## Deploy the invitation origin with Cloudflare Pages
 
 The supplied staging origin is

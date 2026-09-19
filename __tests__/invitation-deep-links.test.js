@@ -7,6 +7,7 @@ import path from "node:path";
 
 import createExpoConfig from "../app.config";
 import appJson from "../app.json";
+import easJson from "../eas.json";
 import { readInvitationLinkConfig } from "../src/household/invitationLinkConfig";
 
 const baseConfig = appJson.expo;
@@ -112,6 +113,32 @@ function buildPages(cwd, overrides = {}) {
 }
 
 describe("invitation deep-link configuration", () => {
+  it("configures an installable Android staging preview build", () => {
+    const preview = easJson.build.preview;
+    const config = buildExpoConfig(baseConfig, preview.env);
+
+    expect(appJson.expo.extra.eas.projectId).toBeTruthy();
+    expect(preview.distribution).toBe("internal");
+    expect(preview.android.buildType).toBe("apk");
+    expect(preview.env.EXPO_PUBLIC_APP_ENV).toBe("staging");
+    expect(preview.env.IOS_APP_ID).toBeUndefined();
+    expect(config.android).toMatchObject({
+      package: "com.householdtool.mobile.staging",
+      intentFilters: [
+        {
+          autoVerify: true,
+          data: [
+            {
+              scheme: "https",
+              host: "household-tool-invitations.pages.dev",
+              path: "/invitations/parent",
+            },
+          ],
+        },
+      ],
+    });
+  });
+
   it("keeps custom schemes and excludes local hosts from native web association", () => {
     const config = buildExpoConfig(baseConfig, {
       EXPO_PUBLIC_APP_ENV: "local",

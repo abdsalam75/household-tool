@@ -14,6 +14,11 @@
       "supportsTablet": true
     },
     "android": {},
-    "plugins": ["expo-dev-client", "expo-secure-store"]
+    "plugins": ["expo-dev-client", "expo-secure-store"],
+    "extra": {
+      "eas": {
+        "projectId": "1f237378-2a64-4461-b001-e8bbecb2e459"
+      }
+    }
   }
 }
