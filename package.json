@@ -12,6 +12,7 @@
     "format:check": "prettier --check \"**/*.{js,cjs,mjs,jsx,ts,tsx,json}\"",
     "lint": "eslint .",
     "test": "jest",
+    "build:invitation-pages": "node scripts/build-invitation-pages.mjs",
     "verify:invitation-deployment": "node scripts/verify-invitation-deployment.mjs"
   },
   "dependencies": {

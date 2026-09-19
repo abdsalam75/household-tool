@@ -17,15 +17,15 @@ staging and production. These values are public identifiers, but they must
 still be supplied by the matching deployment rather than copied between
 environments.
 
-| Value | Mobile build | Invite-host Caddy | Requirement |
+| Value | Mobile build | Invite-host deployment | Requirement |
 | --- | --- | --- | --- |
 | `EXPO_PUBLIC_APP_ENV` | yes | no | `staging` or `production` |
-| `EXPO_PUBLIC_INVITATION_ORIGIN` | yes | verification command | Exact HTTPS origin, with no path, query, fragment, credentials, or port |
+| `EXPO_PUBLIC_INVITATION_ORIGIN` | yes | Pages build and verification command | Exact HTTPS origin, with no path, query, fragment, credentials, or port |
 | `IOS_BUNDLE_IDENTIFIER` | yes | included within `IOS_APP_ID` | Bundle ID registered for this environment |
-| `IOS_APP_ID` | no | yes | Apple application identifier: `<TEAM_ID>.<IOS_BUNDLE_IDENTIFIER>` |
-| `ANDROID_PACKAGE_NAME` | yes | yes | Android application ID for this environment |
-| `ANDROID_CERT_SHA256` | no | yes | SHA-256 fingerprint of the certificate that signs this environment's installed build |
-| `INVITE_DOMAIN` | no | yes | Hostname from `EXPO_PUBLIC_INVITATION_ORIGIN`, without `https://` |
+| `IOS_APP_ID` | no | Caddy or Pages | Apple application identifier: `<TEAM_ID>.<IOS_BUNDLE_IDENTIFIER>` |
+| `ANDROID_PACKAGE_NAME` | yes | Caddy or Pages | Android application ID for this environment |
+| `ANDROID_CERT_SHA256` | no | Caddy or Pages | SHA-256 fingerprint of the certificate that signs this environment's installed build |
+| `INVITE_DOMAIN` | no | Caddy only | Hostname from `EXPO_PUBLIC_INVITATION_ORIGIN`, without `https://` |
 
 `ANDROID_CERT_SHA256` comes from the staging signing certificate or the Play
 App Signing page, as applicable. It is a certificate fingerprint, not a
@@ -38,12 +38,53 @@ The mobile build config preserves the `household-tool-local`,
 and authentication callbacks. Only staging and production invitation origins
 should be associated with distributable builds.
 
-## Deploy the invitation origin
+## Deploy the invitation origin with Cloudflare Pages
+
+The supplied staging origin is
+`https://household-tool-invitations.pages.dev`. Configure the matching staging
+mobile build with that exact `EXPO_PUBLIC_INVITATION_ORIGIN`. The production
+origin has not been supplied; configure it separately when known. A Pages
+hostname existing does not establish that the site or association files are
+deployed.
+
+For the staging Pages project connected to this Git repository, set the root
+directory to the repository root, framework preset to None, build command to
+`npm run build:invitation-pages`, and build output directory to
+`dist/invitation-pages`. Set these public build environment values in the
+Pages project to the identifiers of the matching staging build:
+
+- `EXPO_PUBLIC_INVITATION_ORIGIN=https://household-tool-invitations.pages.dev`
+- `IOS_APP_ID` — registered Apple team ID plus staging bundle identifier.
+- `ANDROID_PACKAGE_NAME` — installed staging Android package identifier.
+- `ANDROID_CERT_SHA256` — SHA-256 fingerprint of the certificate signing that
+  installed build, as 32 colon-separated hexadecimal bytes.
+
+The build fails if a required value is absent or malformed. It writes direct
+`/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json`
+assets, an explicit `invitations/parent.html` asset for the extensionless
+canonical path, and the same generic `index.html` fallback. There is no
+`404.html`, so Pages' single-page-app fallback serves that generic page for
+unmatched paths. The generated `_headers` sets `Content-Type:
+application/json` on both association paths and `Cache-Control: no-store`,
+`Referrer-Policy: no-referrer`, and a restrictive content security policy on
+all paths. No redirect rules, Pages Functions, token parsing, or invitation
+lookup are involved. [Cloudflare's serving rules](https://developers.cloudflare.com/pages/configuration/serving-pages/)
+describe the extensionless route and unmatched-path behavior; the live
+verifier below must establish actual HTTP responses after deployment.
+
+Use a separate Pages project and matching environment values for production.
+Do not copy staging identifiers or a fingerprint into production merely to
+make a build succeed. A native rebuild and reinstall is required after
+changing the associated domain, intent filter, bundle/package ID, or signing
+identity.
+
+## Deploy the invitation origin with Caddy
 
 1. Point `INVITE_DOMAIN` DNS at the Caddy deployment and ensure TCP 443 is
    publicly reachable. Do not place a redirecting CDN rule in front of the two
    `/.well-known/` paths.
-2. Supply the four invite-host Caddy values above in the same protected
+2. Supply the four invite-host Caddy values (`INVITE_DOMAIN`, `IOS_APP_ID`,
+   `ANDROID_PACKAGE_NAME`, and `ANDROID_CERT_SHA256`) in the same protected
    deployment environment that supplies `PROXY_DOMAIN`. The Caddy overlay in
    `infra/supabase/docker-compose.caddy.yml` passes them to the tracked
    `Caddyfile`.
@@ -55,9 +96,10 @@ should be associated with distributable builds.
    production build. A native rebuild and reinstall is required after changing
    associated domains, intent filters, bundle ID, or package name.
 
-Do not reuse generated association responses between environments. The values
-are substituted when Caddy loads its configuration, and `no-store` prevents an
-origin cache from retaining one environment's identifiers for another.
+Do not reuse generated association responses between environments. Caddy
+substitutes the values when it loads its configuration; Pages does so during
+the build. `no-store` prevents a browser from retaining one environment's
+identifiers for another.
 
 ## Automated staging verification
 

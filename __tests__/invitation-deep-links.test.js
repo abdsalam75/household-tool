@@ -2,6 +2,7 @@
 
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import createExpoConfig from "../app.config";
@@ -79,6 +80,26 @@ function runVerifierWithMockResponses(badFallback = false) {
         ANDROID_PACKAGE_NAME: "com.example.household.staging",
         ANDROID_CERT_SHA256: Array(32).fill("AA").join(":"),
         TEST_BAD_FALLBACK: badFallback ? "1" : "0",
+      },
+    },
+  );
+}
+
+function buildPages(cwd, overrides = {}) {
+  return spawnSync(
+    process.execPath,
+    [path.join(root, "scripts/build-invitation-pages.mjs")],
+    {
+      cwd,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        EXPO_PUBLIC_INVITATION_ORIGIN:
+          "https://household-tool-invitations.pages.dev",
+        IOS_APP_ID: "TEAM123456.com.example.household.staging",
+        ANDROID_PACKAGE_NAME: "com.example.household.staging",
+        ANDROID_CERT_SHA256: Array(32).fill("ab").join(":"),
+        ...overrides,
       },
     },
   );
@@ -256,5 +277,115 @@ describe("invitation deep-link configuration", () => {
     );
     expect(result.stderr).not.toContain("a".repeat(43));
     expect(result.stderr).not.toContain("token=");
+  });
+
+  it("builds direct Pages association assets and one generic canonical and unknown-path fallback", () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "invitation-pages-"));
+    try {
+      const result = buildPages(cwd);
+      expect(result.status).toBe(0);
+      expect(result.stdout).not.toContain("TEAM123456");
+      expect(result.stdout).not.toContain("ab:ab");
+
+      const output = path.join(cwd, "dist/invitation-pages");
+      expect(fs.readdirSync(output).sort()).toEqual([
+        ".well-known",
+        "_headers",
+        "index.html",
+        "invitations",
+      ]);
+      expect(fs.readdirSync(path.join(output, ".well-known")).sort()).toEqual([
+        "apple-app-site-association",
+        "assetlinks.json",
+      ]);
+      expect(fs.readdirSync(path.join(output, "invitations"))).toEqual([
+        "parent.html",
+      ]);
+
+      const aasa = JSON.parse(
+        fs.readFileSync(
+          path.join(output, ".well-known/apple-app-site-association"),
+          "utf8",
+        ),
+      );
+      const assetlinks = JSON.parse(
+        fs.readFileSync(
+          path.join(output, ".well-known/assetlinks.json"),
+          "utf8",
+        ),
+      );
+      const [caddyAasa, caddyAssetlinks] = associationJsonBodies();
+      expect(aasa).toEqual({
+        applinks: {
+          details: [
+            {
+              appIDs: caddyAasa.applinks.details[0].appIDs,
+              components: [
+                {
+                  "/": "/invitations/parent",
+                  "?": { token: tokenPattern },
+                },
+              ],
+            },
+          ],
+        },
+      });
+      expect(assetlinks[0]).toMatchObject({
+        relation: caddyAssetlinks[0].relation,
+        target: {
+          namespace: "android_app",
+          package_name: "com.example.household.staging",
+          sha256_cert_fingerprints: [Array(32).fill("AB").join(":")],
+        },
+        relation_extensions: caddyAssetlinks[0].relation_extensions,
+      });
+
+      const headers = fs.readFileSync(path.join(output, "_headers"), "utf8");
+      expect(headers).toMatch(/\/\*\n {2}Cache-Control: no-store, max-age=0/);
+      expect(headers).toMatch(/Referrer-Policy: no-referrer/);
+      expect(headers).toMatch(
+        /\/\.well-known\/apple-app-site-association\n {2}Content-Type: application\/json/,
+      );
+      expect(headers).toMatch(
+        /\/\.well-known\/assetlinks\.json\n {2}Content-Type: application\/json/,
+      );
+      const fallback = fs.readFileSync(path.join(output, "index.html"), "utf8");
+      expect(
+        fs.readFileSync(path.join(output, "invitations/parent.html"), "utf8"),
+      ).toBe(fallback);
+      expect(fallback).toContain("Install or open Household Tool");
+      expect(fallback).not.toMatch(/token=|member=|invite-status/i);
+      expect(fs.existsSync(path.join(output, "404.html"))).toBe(false);
+      expect(fs.existsSync(path.join(output, "_redirects"))).toBe(false);
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    ["missing Apple app ID", { IOS_APP_ID: "" }],
+    ["missing Android package", { ANDROID_PACKAGE_NAME: "" }],
+    ["malformed Android package", { ANDROID_PACKAGE_NAME: "com.example;bad" }],
+    ["malformed fingerprint", { ANDROID_CERT_SHA256: "not-a-fingerprint" }],
+    [
+      "placeholder fingerprint",
+      { ANDROID_CERT_SHA256: Array(32).fill("00").join(":") },
+    ],
+    [
+      "non-origin URL",
+      { EXPO_PUBLIC_INVITATION_ORIGIN: "https://example.test/path" },
+    ],
+  ])("rejects %s before creating a Pages output", (_, overrides) => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "invitation-pages-"));
+    try {
+      const result = buildPages(cwd, overrides);
+      expect(result.status).toBe(1);
+      expect(fs.existsSync(path.join(cwd, "dist/invitation-pages"))).toBe(
+        false,
+      );
+      expect(result.stderr).not.toContain("https://example.test/path");
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
   });
 });
