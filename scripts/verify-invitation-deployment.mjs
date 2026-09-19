@@ -32,21 +32,21 @@ function deploymentValues() {
   };
 }
 
-async function directResponse(url, expectedContentType) {
+async function directResponse(url, expectedContentType, label) {
   const response = await fetch(url, { redirect: "manual" });
   if (response.status !== 200) {
-    throw new Error(`${url} returned HTTP ${response.status}, expected 200`);
+    throw new Error(`${label} returned HTTP ${response.status}, expected 200`);
   }
   if (response.headers.has("location")) {
-    throw new Error(`${url} returned a redirect location`);
+    throw new Error(`${label} returned a redirect location`);
   }
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().startsWith(expectedContentType)) {
-    throw new Error(`${url} returned unexpected Content-Type ${contentType}`);
+    throw new Error(`${label} returned unexpected Content-Type ${contentType}`);
   }
   const cacheControl = response.headers.get("cache-control") ?? "";
   if (!cacheControl.toLowerCase().includes("no-store")) {
-    throw new Error(`${url} is missing Cache-Control: no-store`);
+    throw new Error(`${label} is missing Cache-Control: no-store`);
   }
   return response;
 }
@@ -66,6 +66,7 @@ async function verifyAssociations(values) {
   const aasaResponse = await directResponse(
     `${values.origin}/.well-known/apple-app-site-association`,
     "application/json",
+    "AASA",
   );
   const aasa = await aasaResponse.json();
   const details = aasa?.applinks?.details;
@@ -74,10 +75,14 @@ async function verifyAssociations(values) {
   );
   if (!appDetail) throw new Error("AASA does not identify IOS_APP_ID");
   requireCanonicalComponent(appDetail.components, "AASA");
+  console.log(
+    "PASS AASA: direct HTTP 200 JSON, no redirect, no-store; iOS app ID and canonical path/token query matched",
+  );
 
   const assetResponse = await directResponse(
     `${values.origin}/.well-known/assetlinks.json`,
     "application/json",
+    "assetlinks.json",
   );
   const assetlinks = await assetResponse.json();
   const statement = assetlinks?.find(
@@ -102,32 +107,44 @@ async function verifyAssociations(values) {
     ]?.dynamic_app_link_components,
     "assetlinks.json",
   );
+  console.log(
+    "PASS assetlinks.json: direct HTTP 200 JSON, no redirect, no-store; Android package/fingerprint and canonical path/token query matched",
+  );
 }
 
 async function verifyFallback(values) {
   const candidates = [
-    `${values.origin}/invitations/parent?token=${TEST_TOKEN}`,
-    `${values.origin}/invitations/parent`,
-    `${values.origin}/invitations/parent?token=short`,
-    `${values.origin}/invitations/parent?token=${TEST_TOKEN}&member=private`,
-    `${values.origin}/unsupported?token=${TEST_TOKEN}`,
+    ["valid-shaped", `/invitations/parent?token=${TEST_TOKEN}`],
+    ["missing-token", "/invitations/parent"],
+    ["malformed-token", "/invitations/parent?token=short"],
+    ["extra-query", `/invitations/parent?token=${TEST_TOKEN}&member=private`],
+    ["unsupported-path", `/unsupported?token=${TEST_TOKEN}`],
   ];
 
-  for (const url of candidates) {
-    const response = await directResponse(url, "text/html");
+  for (const [label, path] of candidates) {
+    const response = await directResponse(
+      `${values.origin}${path}`,
+      "text/html",
+      `${label} fallback`,
+    );
     if (response.headers.get("referrer-policy") !== "no-referrer") {
-      throw new Error(`${url} is missing Referrer-Policy: no-referrer`);
+      throw new Error(
+        `${label} fallback is missing Referrer-Policy: no-referrer`,
+      );
     }
     const body = await response.text();
     if (!body.includes("Install or open Household Tool")) {
-      throw new Error(`${url} did not return the generic fallback`);
+      throw new Error(`${label} did not return the generic fallback`);
     }
     if (
       body.includes(TEST_TOKEN) ||
       /token=|member=|invite-status|invitation is valid/i.test(body)
     ) {
-      throw new Error(`${url} disclosed link data or invitation state`);
+      throw new Error(`${label} disclosed link data or invitation state`);
     }
+    console.log(
+      `PASS ${label} fallback: direct HTTP 200 generic HTML, no redirect, no-store, no-referrer`,
+    );
   }
 }
 
@@ -135,7 +152,7 @@ try {
   const values = deploymentValues();
   await verifyAssociations(values);
   await verifyFallback(values);
-  console.log(`Invitation deployment verified at ${values.origin}`);
+  console.log(`PASS invitation deployment at ${values.origin}`);
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;

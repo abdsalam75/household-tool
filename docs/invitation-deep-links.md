@@ -85,7 +85,10 @@ The verifier does not follow redirects. It checks a direct HTTP 200,
 application identifiers, signing fingerprint, exact path, and 43-character
 query matcher; and checks the valid, missing-token, malformed-token,
 extra-parameter, and unsupported-path browser responses for generic,
-non-reflecting content.
+non-reflecting content. Successful output names each check and its response
+properties without printing a test token or token-bearing URL. The verifier's
+mocked test output is not deployment evidence; capture its output only when run
+against the real staging origin with matching deployment values.
 
 ## Physical-device staging checklist
 
@@ -136,10 +139,12 @@ verification result, test time, and PASS/FAIL. Never record the URL or token.
   Confirm the generic “Install or open Household Tool” page appears and does
   not name a household, member, invitation status, or token and does not claim
   the invitation is valid.
-- Repeat with a missing token, a short token, an extra query parameter, and an
-  unsupported path. Confirm every case stays generic and reveals no invitation
-  state. On installed devices, a malformed URL that the OS still routes may
-  instead show the app's existing generic invalid-invitation message.
+- Repeat with a missing token, a short or tampered token, an extra query
+  parameter, a fragment, and an unsupported path. Confirm every case stays
+  generic and reveals no invitation state. On installed devices, a malformed
+  URL that the OS still routes may instead show the app's existing generic
+  invalid-invitation message. A URL fragment is not sent in an HTTP request,
+  so verify that case in the browser or app on the device.
 - Record device/browser versions and PASS/FAIL without recording any token.
 
 Physical iOS and Android results are staging release evidence and cannot be
