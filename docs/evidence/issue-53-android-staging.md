@@ -11,6 +11,12 @@ parent and child valid-shaped, missing-token, malformed-token, extra-query,
 and fragment requests, plus the unsupported path. The live Android association
 failed the new child-component check. Overall live verification: FAIL.
 
+The EAS preview build was attempted from committed source with the existing
+remote Android keystore. The EAS API request failed during project upload,
+then failed again on retry. No build identifier or APK was produced. Retry the
+build when the EAS API request succeeds; do not infer a signed-build PASS from
+the configured keystore alone.
+
 | Field | Redacted result to record |
 | --- | --- |
 | Verification date/time with timezone | Pending |
