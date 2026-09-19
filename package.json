@@ -13,6 +13,7 @@
     "lint": "eslint .",
     "test": "jest",
     "build:invitation-pages": "node scripts/build-invitation-pages.mjs",
+    "build:invitation-pages:staging": "node scripts/build-staging-invitation-pages.mjs",
     "verify:invitation-deployment": "node scripts/verify-invitation-deployment.mjs"
   },
   "dependencies": {

@@ -73,25 +73,48 @@ origin has not been supplied; configure it separately when known. A Pages
 hostname existing does not establish that the site or association files are
 deployed.
 
-For the staging Pages project connected to this Git repository, set the root
-directory to the repository root, framework preset to None, build command to
-`npm run build:invitation-pages`, and build output directory to
-`dist/invitation-pages`. Set these public build environment values in the
-Pages project to the identifiers of the matching staging build:
+The dedicated `npm run build:invitation-pages:staging` command supplies the
+public staging origin, `INVITATION_ANDROID_ONLY=true`, package
+`com.householdtool.mobile.staging`, and the staging certificate fingerprint
+listed in the verification command below. It clears any inherited `IOS_APP_ID`
+and produces `dist/invitation-pages`. Run it locally and inspect the generated
+`dist/invitation-pages/.well-known/assetlinks.json` before deployment. It must
+contain the parent component, child fragment exclusion, exact child token
+component, and final catch-all exclusion in that order. Both invitation HTML
+files must contain only the generic fallback. The generic builder
+`npm run build:invitation-pages` remains available for other environments and
+requires their matching public environment values.
 
-- `EXPO_PUBLIC_INVITATION_ORIGIN=https://household-tool-invitations.pages.dev`
-- `INVITATION_ANDROID_ONLY=true` — explicitly deploy Android-only association
-  output while the registered Apple application ID is unavailable.
-- `ANDROID_PACKAGE_NAME` — installed staging Android package identifier.
-- `ANDROID_CERT_SHA256` — SHA-256 fingerprint of the certificate signing that
-  installed build, as 32 colon-separated hexadecimal bytes.
+For an existing Git-integrated staging Pages project, the Cloudflare account
+owner must check that the connected repository is `abdsalam75/household-tool`,
+the production branch is the intended branch, automatic production deployments
+are enabled, the root directory is the repository root, framework preset is
+None, build command is `npm run build:invitation-pages:staging`, and build output
+directory is `dist/invitation-pages`. Then push the committed issue work to that
+branch and wait for its successful production deployment. A local commit does
+not update the public site. If this project uses Direct Upload instead, the
+owner can run the same staging build locally and use the existing project's
+Create a new deployment action to upload the `dist/invitation-pages` folder to
+production. Do not create a second Pages project for the same hostname. These
+paths follow Cloudflare's [Git integration](https://developers.cloudflare.com/pages/configuration/git-integration/),
+[build configuration](https://developers.cloudflare.com/pages/configuration/build-configuration/),
+and [Direct Upload](https://developers.cloudflare.com/pages/get-started/direct-upload/)
+documentation.
 
-Leave `IOS_APP_ID` unset in Android-only mode; the builder rejects a supplied
-value instead of accepting a fabricated identifier. It writes only
+After the deployment, run the live verifier below. Expect every association and
+fallback check to PASS; a missing child component means the public deployment
+is still stale or the wrong build command/output directory was used. In the
+Pages dashboard, compare the production deployment commit or upload time with
+the intended artifact and inspect its build log. If a deployment breaks the
+site, the owner can restore a prior successful production deployment from the
+Deployments menu using Cloudflare's [rollback procedure](https://developers.cloudflare.com/pages/configuration/rollbacks/).
+
+The staging command writes only
 `/.well-known/assetlinks.json` under `.well-known` and omits the AASA header
-rule. To enable iOS later, remove `INVITATION_ANDROID_ONLY` (or set it to
-`false`) and supply the real registered `IOS_APP_ID`. That full mode still
-requires the Apple ID and writes both association files. The build fails if
+rule. To enable iOS later, use the generic builder with
+`INVITATION_ANDROID_ONLY=false` and the real registered `IOS_APP_ID`, after
+#54 supplies its child association. That full mode writes both association
+files. The build fails if
 any required value is absent or malformed. Both modes write an explicit
 `invitations/parent.html` and `invitations/child.html` assets for the two
 extensionless paths and the same generic `index.html` fallback. The Android
@@ -176,7 +199,7 @@ export INVITATION_ANDROID_ONLY=true
 unset IOS_APP_ID
 export ANDROID_PACKAGE_NAME=com.householdtool.mobile.staging
 export ANDROID_CERT_SHA256=F8:80:93:DA:99:49:4A:9E:7F:86:02:E4:4E:08:7C:4F:BC:B9:1E:B1:E4:54:49:86:6A:09:29:F9:A9:55:C4:F3
-npm run build:invitation-pages
+npm run build:invitation-pages:staging
 npm run verify:invitation-deployment
 ```
 

@@ -547,6 +547,76 @@ describe("invitation deep-link configuration", () => {
     }
   });
 
+  it("builds the exact staging association despite unrelated inherited deployment values", () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "invitation-staging-"));
+    try {
+      const result = spawnSync(
+        process.execPath,
+        [path.join(root, "scripts/build-staging-invitation-pages.mjs")],
+        {
+          cwd,
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            EXPO_PUBLIC_INVITATION_ORIGIN: "https://other.example.test",
+            INVITATION_ANDROID_ONLY: "false",
+            IOS_APP_ID: "TEAM123456.com.example.household.staging",
+            ANDROID_PACKAGE_NAME: "com.example.other",
+            ANDROID_CERT_SHA256: Array(32).fill("AA").join(":"),
+          },
+        },
+      );
+      expect(result.status).toBe(0);
+      expect(result.stdout).not.toContain("token=");
+
+      const output = path.join(cwd, "dist/invitation-pages");
+      const assetlinks = JSON.parse(
+        fs.readFileSync(
+          path.join(output, ".well-known/assetlinks.json"),
+          "utf8",
+        ),
+      );
+      expect(assetlinks).toEqual([
+        {
+          relation: ["delegate_permission/common.handle_all_urls"],
+          target: {
+            namespace: "android_app",
+            package_name: "com.householdtool.mobile.staging",
+            sha256_cert_fingerprints: [
+              "F8:80:93:DA:99:49:4A:9E:7F:86:02:E4:4E:08:7C:4F:BC:B9:1E:B1:E4:54:49:86:6A:09:29:F9:A9:55:C4:F3",
+            ],
+          },
+          relation_extensions: {
+            "delegate_permission/common.handle_all_urls": {
+              dynamic_app_link_components: [
+                { "/": "/invitations/parent", "?": { token: tokenPattern } },
+                { "/": "/invitations/child", "#": "?*", exclude: true },
+                { "/": "/invitations/child", "?": { token: tokenPattern } },
+                { "/": "*", exclude: true },
+              ],
+            },
+          },
+        },
+      ]);
+      expect(fs.readdirSync(path.join(output, ".well-known"))).toEqual([
+        "assetlinks.json",
+      ]);
+      const fallback = fs.readFileSync(path.join(output, "index.html"), "utf8");
+      expect(
+        fs.readFileSync(path.join(output, "invitations/parent.html"), "utf8"),
+      ).toBe(fallback);
+      expect(
+        fs.readFileSync(path.join(output, "invitations/child.html"), "utf8"),
+      ).toBe(fallback);
+      expect(fallback).not.toMatch(/token=|member=|invite-status/i);
+      expect(fs.readFileSync(path.join(output, "_headers"), "utf8")).toContain(
+        "Cache-Control: no-store, max-age=0",
+      );
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it.each([
     ["missing Apple app ID", { IOS_APP_ID: "" }],
     ["Apple app ID in Android-only mode", { INVITATION_ANDROID_ONLY: "true" }],
