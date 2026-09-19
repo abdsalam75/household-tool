@@ -98,6 +98,15 @@ function buildExpoConfig(config, environment) {
             host: native.inviteHost,
             path: "/invitations/parent",
           },
+          ...(native.appEnvironment === "staging"
+            ? [
+                {
+                  scheme: "https",
+                  host: native.inviteHost,
+                  path: "/invitations/child",
+                },
+              ]
+            : []),
         ],
       },
     ];

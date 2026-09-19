@@ -44,9 +44,18 @@ function associationJsonBodies() {
 
 function runVerifierWithMockResponses(badFallback = false, overrides = {}) {
   const [aasa, assetlinks] = associationJsonBodies();
+  assetlinks[0].relation_extensions[
+    "delegate_permission/common.handle_all_urls"
+  ].dynamic_app_link_components.splice(1, 0, {
+    "/": "/invitations/child",
+    "?": { token: tokenPattern },
+  });
   const preload = `
     const aasa = ${JSON.stringify(aasa)};
     const assetlinks = ${JSON.stringify(assetlinks)};
+    const components = assetlinks[0].relation_extensions["delegate_permission/common.handle_all_urls"].dynamic_app_link_components;
+    if (process.env.TEST_ASSOCIATION_MUTATION === "missing-child") components.splice(1, 1);
+    if (process.env.TEST_ASSOCIATION_MUTATION === "broadened") components.push({ "/": "/other" });
     globalThis.fetch = async (input) => {
       const url = new URL(input);
       const common = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
@@ -64,7 +73,7 @@ function runVerifierWithMockResponses(badFallback = false, overrides = {}) {
         });
       }
       return new Response("Install or open Household Tool", {
-        status: process.env.TEST_BAD_FALLBACK === "1" && url.searchParams.has("token") ? 503 : 200,
+        status: process.env.TEST_BAD_FALLBACK === "1" && url.pathname === "/invitations/child" && url.searchParams.has("token") ? 503 : 200,
         headers: { ...common, "Content-Type": "text/html" },
       });
     };
@@ -133,6 +142,11 @@ describe("invitation deep-link configuration", () => {
               host: "household-tool-invitations.pages.dev",
               path: "/invitations/parent",
             },
+            {
+              scheme: "https",
+              host: "household-tool-invitations.pages.dev",
+              path: "/invitations/child",
+            },
           ],
         },
       ],
@@ -194,6 +208,15 @@ describe("invitation deep-link configuration", () => {
                 host: native.inviteHost,
                 path: "/invitations/parent",
               },
+              ...(appEnvironment === "staging"
+                ? [
+                    {
+                      scheme: "https",
+                      host: native.inviteHost,
+                      path: "/invitations/child",
+                    },
+                  ]
+                : []),
             ],
           },
         ],
@@ -286,10 +309,15 @@ describe("invitation deep-link configuration", () => {
       /PASS assetlinks\.json: direct HTTP 200 JSON/,
     );
     for (const label of [
-      "valid-shaped",
-      "missing-token",
-      "malformed-token",
-      "extra-query",
+      ...["parent", "child"].flatMap((path) =>
+        [
+          "valid-shaped",
+          "missing-token",
+          "malformed-token",
+          "extra-query",
+          "fragment",
+        ].map((caseName) => `${path} ${caseName}`),
+      ),
       "unsupported-path",
     ]) {
       expect(result.stdout).toContain(
@@ -307,7 +335,7 @@ describe("invitation deep-link configuration", () => {
     const result = runVerifierWithMockResponses(true);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain(
-      "valid-shaped fallback returned HTTP 503, expected 200",
+      "child valid-shaped fallback returned HTTP 503, expected 200",
     );
     expect(result.stderr).not.toContain("a".repeat(43));
     expect(result.stderr).not.toContain("token=");
@@ -321,9 +349,24 @@ describe("invitation deep-link configuration", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).not.toContain("PASS AASA");
     expect(result.stdout).toContain("PASS assetlinks.json");
+    expect(result.stdout).toContain("PASS child fragment fallback");
     expect(result.stdout).toContain("PASS unsupported-path fallback");
     expect(result.stderr).toBe("");
   });
+
+  it.each(["missing-child", "broadened"])(
+    "rejects %s Android association routing",
+    (mutation) => {
+      const result = runVerifierWithMockResponses(false, {
+        TEST_ASSOCIATION_MUTATION: mutation,
+      });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(
+        "assetlinks.json has missing, mismatched, or broadened routing",
+      );
+      expect(result.stderr).not.toContain("token=");
+    },
+  );
 
   it("builds direct Pages association assets and one generic canonical and unknown-path fallback", () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "invitation-pages-"));
@@ -344,7 +387,8 @@ describe("invitation deep-link configuration", () => {
         "apple-app-site-association",
         "assetlinks.json",
       ]);
-      expect(fs.readdirSync(path.join(output, "invitations"))).toEqual([
+      expect(fs.readdirSync(path.join(output, "invitations")).sort()).toEqual([
+        "child.html",
         "parent.html",
       ]);
 
@@ -383,8 +427,16 @@ describe("invitation deep-link configuration", () => {
           package_name: "com.example.household.staging",
           sha256_cert_fingerprints: [Array(32).fill("AB").join(":")],
         },
-        relation_extensions: caddyAssetlinks[0].relation_extensions,
       });
+      expect(
+        assetlinks[0].relation_extensions[
+          "delegate_permission/common.handle_all_urls"
+        ].dynamic_app_link_components,
+      ).toEqual([
+        { "/": "/invitations/parent", "?": { token: tokenPattern } },
+        { "/": "/invitations/child", "?": { token: tokenPattern } },
+        { "/": "*", exclude: true },
+      ]);
 
       const headers = fs.readFileSync(path.join(output, "_headers"), "utf8");
       expect(headers).toMatch(/\/\*\n {2}Cache-Control: no-store, max-age=0/);
@@ -398,6 +450,9 @@ describe("invitation deep-link configuration", () => {
       const fallback = fs.readFileSync(path.join(output, "index.html"), "utf8");
       expect(
         fs.readFileSync(path.join(output, "invitations/parent.html"), "utf8"),
+      ).toBe(fallback);
+      expect(
+        fs.readFileSync(path.join(output, "invitations/child.html"), "utf8"),
       ).toBe(fallback);
       expect(fallback).toContain("Install or open Household Tool");
       expect(fallback).not.toMatch(/token=|member=|invite-status/i);
@@ -438,6 +493,7 @@ describe("invitation deep-link configuration", () => {
         ].dynamic_app_link_components,
       ).toEqual([
         { "/": "/invitations/parent", "?": { token: tokenPattern } },
+        { "/": "/invitations/child", "?": { token: tokenPattern } },
         { "/": "*", exclude: true },
       ]);
       const headers = fs.readFileSync(path.join(output, "_headers"), "utf8");
@@ -450,6 +506,9 @@ describe("invitation deep-link configuration", () => {
       const fallback = fs.readFileSync(path.join(output, "index.html"), "utf8");
       expect(
         fs.readFileSync(path.join(output, "invitations/parent.html"), "utf8"),
+      ).toBe(fallback);
+      expect(
+        fs.readFileSync(path.join(output, "invitations/child.html"), "utf8"),
       ).toBe(fallback);
       expect(fallback).toContain("Install or open Household Tool");
       expect(fallback).not.toMatch(/token=|member=|invite-status/i);

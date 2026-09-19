@@ -3,6 +3,33 @@ import type { AppEnvironment } from "../auth/config";
 export const PARENT_INVITATION_PATH = "/invitations/parent";
 export const CHILD_INVITATION_PATH = "/invitations/child";
 
+export function classifyChildInvitationUrl(
+  candidate: string,
+  childInvitationUrl: string,
+): "unrelated" | "valid" | "invalid" {
+  try {
+    const actual = new URL(candidate);
+    const expected = new URL(childInvitationUrl);
+    if (
+      actual.origin !== expected.origin ||
+      actual.pathname !== expected.pathname
+    )
+      return "unrelated";
+    const token = actual.searchParams.get("token");
+    return candidate === actual.toString() &&
+      !actual.username &&
+      !actual.password &&
+      !actual.hash &&
+      token !== null &&
+      /^[A-Za-z0-9_-]{43}$/.test(token) &&
+      actual.search === `?token=${token}`
+      ? "valid"
+      : "invalid";
+  } catch {
+    return "unrelated";
+  }
+}
+
 export type InvitationLinkConfig = {
   invitationOrigin: string;
   parentInvitationUrl: string;

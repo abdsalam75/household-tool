@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Linking } from "react-native";
+import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 
 import {
   initialAuthState,
@@ -11,6 +11,10 @@ import type { AuthAction, ParentAuthService, Provider } from "./src/auth/types";
 import { createHouseholdService } from "./src/household/createHouseholdService";
 import { createParentInvitationAcceptanceService } from "./src/household/createParentInvitationAcceptanceService";
 import { HouseholdFlow } from "./src/household/HouseholdFlow";
+import {
+  classifyChildInvitationUrl,
+  readExpoPublicInvitationLinkConfig,
+} from "./src/household/invitationLinkConfig";
 import type { ParentInvitationAcceptanceServiceContract } from "./src/household/ParentInvitationAcceptanceService";
 import {
   ParentInvitationAcceptanceView,
@@ -22,13 +26,23 @@ type AppProps = {
   service?: ParentAuthService;
   householdService?: HouseholdService;
   invitationAcceptanceService?: ParentInvitationAcceptanceServiceContract;
+  childInvitationUrlBase?: string;
 };
 
 export function ParentAuthApp({
   service: injectedService,
   householdService: injectedHouseholdService,
   invitationAcceptanceService: injectedInvitationAcceptanceService,
+  childInvitationUrlBase,
 }: AppProps) {
+  const [childInvitationUrl] = useState(() => {
+    if (childInvitationUrlBase) return childInvitationUrlBase;
+    try {
+      return readExpoPublicInvitationLinkConfig().childInvitationUrl;
+    } catch {
+      return null;
+    }
+  });
   const [service] = useState<ParentAuthService | null>(() => {
     if (injectedService) return injectedService;
     try {
@@ -58,6 +72,9 @@ export function ParentAuthApp({
   const [state, setState] = useState(initialAuthState);
   const [invitationPhase, setInvitationPhase] =
     useState<InvitationAcceptancePhase | null>(null);
+  const [childLinkPhase, setChildLinkPhase] = useState<
+    "valid" | "invalid" | null
+  >(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const actionRef = useRef<AuthAction | null>(null);
@@ -90,13 +107,22 @@ export function ParentAuthApp({
 
   const captureInvitationUrl = useCallback(
     async (url: string) => {
+      const childOutcome = childInvitationUrl
+        ? classifyChildInvitationUrl(url, childInvitationUrl)
+        : "unrelated";
+      if (childOutcome !== "unrelated") {
+        setInvitationPhase(null);
+        setChildLinkPhase(childOutcome);
+        return "child" as const;
+      }
       if (!invitationAcceptanceService) return "unrelated" as const;
       const outcome = await invitationAcceptanceService.captureUrl(url);
+      if (outcome !== "unrelated") setChildLinkPhase(null);
       if (outcome === "pending") setInvitationPhase("confirmation");
       if (outcome === "invalid") setInvitationPhase("invalid");
       return outcome;
     },
-    [invitationAcceptanceService],
+    [childInvitationUrl, invitationAcceptanceService],
   );
 
   useEffect(() => {
@@ -222,6 +248,30 @@ export function ParentAuthApp({
     });
   }, [invitationAcceptanceService]);
 
+  if (childLinkPhase) {
+    return (
+      <View style={childStyles.screen}>
+        <View style={childStyles.card}>
+          <Text accessibilityRole="header" style={childStyles.title}>
+            Child invitation
+          </Text>
+          <Text style={childStyles.body}>
+            {childLinkPhase === "valid"
+              ? "Open Household Tool to continue. Invitation details are not shown here."
+              : "This invitation link is invalid. Ask for a new link."}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setChildLinkPhase(null)}
+            style={childStyles.button}
+          >
+            <Text style={childStyles.buttonText}>Continue</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
   if (
     invitationPhase &&
     (invitationPhase !== "confirmation" || state.phase === "signedIn")
@@ -264,3 +314,22 @@ export function ParentAuthApp({
 export default function App() {
   return <ParentAuthApp />;
 }
+
+const childStyles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: "#f4f1ea",
+    justifyContent: "center",
+    padding: 24,
+  },
+  card: { backgroundColor: "#ffffff", borderRadius: 20, gap: 14, padding: 24 },
+  title: { color: "#152238", fontSize: 30, fontWeight: "700" },
+  body: { color: "#4a5568", fontSize: 16, lineHeight: 23 },
+  button: {
+    alignItems: "center",
+    backgroundColor: "#345995",
+    borderRadius: 10,
+    padding: 14,
+  },
+  buttonText: { color: "#ffffff", fontSize: 16, fontWeight: "700" },
+});

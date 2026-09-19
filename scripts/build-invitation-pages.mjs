@@ -4,6 +4,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 const parentPath = "/invitations/parent";
+const childPath = "/invitations/child";
 const tokenPattern = "?".repeat(43);
 
 function required(name, pattern) {
@@ -106,6 +107,7 @@ function associationFiles(values) {
         "delegate_permission/common.handle_all_urls": {
           dynamic_app_link_components: [
             canonicalComponent,
+            { "/": childPath, "?": { token: tokenPattern } },
             { "/": "*", exclude: true },
           ],
         },
@@ -167,6 +169,7 @@ async function build() {
     ),
     writeFile(join(output, "index.html"), fallback),
     writeFile(join(output, "invitations/parent.html"), fallback),
+    writeFile(join(output, "invitations/child.html"), fallback),
     writeFile(join(output, "_headers"), headers(values.androidOnly)),
   ];
   if (aasa) {

@@ -2,6 +2,9 @@
 
 const TOKEN_PATTERN = "?".repeat(43);
 const TEST_TOKEN = "a".repeat(43);
+const PARENT_PATH = "/invitations/parent";
+const CHILD_PATH = "/invitations/child";
+const RELATION = "delegate_permission/common.handle_all_urls";
 
 function required(name) {
   const value = process.env[name];
@@ -53,7 +56,7 @@ async function directResponse(url, expectedContentType, label) {
   }
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().startsWith(expectedContentType)) {
-    throw new Error(`${label} returned unexpected Content-Type ${contentType}`);
+    throw new Error(`${label} returned an unexpected Content-Type`);
   }
   const cacheControl = response.headers.get("cache-control") ?? "";
   if (!cacheControl.toLowerCase().includes("no-store")) {
@@ -62,14 +65,13 @@ async function directResponse(url, expectedContentType, label) {
   return response;
 }
 
-function requireCanonicalComponent(components, source) {
-  const expected = components?.find(
-    (component) =>
-      component?.["/"] === "/invitations/parent" &&
-      component?.["?"]?.token === TOKEN_PATTERN,
-  );
-  if (!expected) {
-    throw new Error(`${source} does not limit routing to the canonical URL`);
+function canonicalComponent(path) {
+  return { "/": path, "?": { token: TOKEN_PATTERN } };
+}
+
+function requireExactComponents(actual, expected, source) {
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error(`${source} has missing, mismatched, or broadened routing`);
   }
 }
 
@@ -86,7 +88,15 @@ async function verifyAssociations(values) {
       detail?.appIDs?.includes(values.iosAppId),
     );
     if (!appDetail) throw new Error("AASA does not identify IOS_APP_ID");
-    requireCanonicalComponent(appDetail.components, "AASA");
+    requireExactComponents(
+      appDetail.components?.map((component) => {
+        const routing = { ...component };
+        delete routing.comment;
+        return routing;
+      }),
+      [canonicalComponent(PARENT_PATH)],
+      "AASA",
+    );
     console.log(
       "PASS AASA: direct HTTP 200 JSON, no redirect, no-store; iOS app ID and canonical path/token query matched",
     );
@@ -98,39 +108,48 @@ async function verifyAssociations(values) {
     "assetlinks.json",
   );
   const assetlinks = await assetResponse.json();
-  const statement = assetlinks?.find(
-    (candidate) =>
-      candidate?.relation?.includes(
-        "delegate_permission/common.handle_all_urls",
-      ) &&
-      candidate?.target?.namespace === "android_app" &&
-      candidate?.target?.package_name === values.androidPackage &&
-      candidate?.target?.sha256_cert_fingerprints
-        ?.map((fingerprint) => fingerprint.toUpperCase())
-        .includes(values.androidFingerprint),
-  );
-  if (!statement) {
+  const statement =
+    Array.isArray(assetlinks) && assetlinks.length === 1 ? assetlinks[0] : null;
+  if (
+    !statement ||
+    JSON.stringify(statement.relation) !== JSON.stringify([RELATION]) ||
+    statement.target?.namespace !== "android_app" ||
+    statement.target?.package_name !== values.androidPackage ||
+    !Array.isArray(statement.target?.sha256_cert_fingerprints) ||
+    statement.target.sha256_cert_fingerprints.length !== 1 ||
+    statement.target.sha256_cert_fingerprints[0].toUpperCase() !==
+      values.androidFingerprint
+  ) {
     throw new Error(
       "assetlinks.json does not identify ANDROID_PACKAGE_NAME and ANDROID_CERT_SHA256",
     );
   }
-  requireCanonicalComponent(
-    statement.relation_extensions?.[
-      "delegate_permission/common.handle_all_urls"
-    ]?.dynamic_app_link_components,
+  requireExactComponents(
+    statement.relation_extensions?.[RELATION]?.dynamic_app_link_components,
+    [
+      canonicalComponent(PARENT_PATH),
+      canonicalComponent(CHILD_PATH),
+      { "/": "*", exclude: true },
+    ],
     "assetlinks.json",
   );
   console.log(
-    "PASS assetlinks.json: direct HTTP 200 JSON, no redirect, no-store; Android package/fingerprint and canonical path/token query matched",
+    "PASS assetlinks.json: direct HTTP 200 JSON, no redirect, no-store; Android package/fingerprint and parent/child path/token components matched",
   );
 }
 
 async function verifyFallback(values) {
   const candidates = [
-    ["valid-shaped", `/invitations/parent?token=${TEST_TOKEN}`],
-    ["missing-token", "/invitations/parent"],
-    ["malformed-token", "/invitations/parent?token=short"],
-    ["extra-query", `/invitations/parent?token=${TEST_TOKEN}&member=private`],
+    ...[PARENT_PATH, CHILD_PATH].flatMap((path) => {
+      const label = path === PARENT_PATH ? "parent" : "child";
+      return [
+        [`${label} valid-shaped`, `${path}?token=${TEST_TOKEN}`],
+        [`${label} missing-token`, path],
+        [`${label} malformed-token`, `${path}?token=short`],
+        [`${label} extra-query`, `${path}?token=${TEST_TOKEN}&member=private`],
+        [`${label} fragment`, `${path}?token=${TEST_TOKEN}#variation`],
+      ];
+    }),
     ["unsupported-path", `/unsupported?token=${TEST_TOKEN}`],
   ];
 
