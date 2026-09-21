@@ -193,6 +193,12 @@ against the real staging origin with matching deployment values.
 
 For this Android-only staging deployment, use the matching public identifiers:
 
+Copy each command as one physical shell line and press Enter only at the end
+of that line. Terminal display wrapping is harmless, but inserting Enter
+inside the URL or certificate fingerprint truncates the value and makes the
+remaining text look like a command. The `curl` check should likewise be one
+line, for example: `curl -i 'https://household-tool-invitations.pages.dev/.well-known/assetlinks.json'`.
+
 ```sh
 export EXPO_PUBLIC_INVITATION_ORIGIN=https://household-tool-invitations.pages.dev
 export INVITATION_ANDROID_ONLY=true
