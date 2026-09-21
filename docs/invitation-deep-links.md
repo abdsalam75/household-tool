@@ -199,6 +199,25 @@ inside the URL or certificate fingerprint truncates the value and makes the
 remaining text look like a command. The `curl` check should likewise be one
 line, for example: `curl -i 'https://household-tool-invitations.pages.dev/.well-known/assetlinks.json'`.
 
+If a terminal or clipboard keeps inserting breaks into long values, construct
+the staging values from short pieces instead:
+
+```sh
+unset EXPO_PUBLIC_INVITATION_ORIGIN INVITATION_ANDROID_ONLY IOS_APP_ID ANDROID_PACKAGE_NAME ANDROID_CERT_SHA256
+origin_scheme='https://'
+origin_host='household-tool-invitations.pages.dev'
+export EXPO_PUBLIC_INVITATION_ORIGIN="${origin_scheme}${origin_host}"
+export INVITATION_ANDROID_ONLY='true'
+unset IOS_APP_ID
+export ANDROID_PACKAGE_NAME='com.householdtool.mobile.staging'
+fp_a='F8:80:93:DA:99:49:4A:9E'
+fp_b='7F:86:02:E4:4E:08:7C:4F'
+fp_c='BC:B9:1E:B1:E4:54:49:86'
+fp_d='6A:09:29:F9:A9:55:C4:F3'
+export ANDROID_CERT_SHA256="${fp_a}:${fp_b}:${fp_c}:${fp_d}"
+npm run verify:invitation-deployment
+```
+
 ```sh
 export EXPO_PUBLIC_INVITATION_ORIGIN=https://household-tool-invitations.pages.dev
 export INVITATION_ANDROID_ONLY=true
