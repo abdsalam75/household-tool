@@ -17,16 +17,19 @@ published on GitHub and the existing Cloudflare Pages project serves the
 matching artifact. The live verifier is the authoritative deployment check;
 a local build alone is not deployment evidence.
 
-The current EAS preview build was accepted and is in progress:
-`c706c880-69bd-4e7d-916e-16dac0171c61`. It uses the existing remote Android
-keystore and must finish before an APK or signed-build result can be recorded.
+The EAS preview build finished successfully:
+`c706c880-69bd-4e7d-916e-16dac0171c61`, app version `0.1.0`, version code `1`.
+It uses the existing remote Android keystore. The downloaded APK is a valid
+Android package; its local SHA-256 is
+`53f4c0c4a6ad795063be3a384a507bccb1f432618fd96307dfa3d81fb8a964ec`.
+Signing-fingerprint match and physical-device results remain pending.
 
 | Field | Redacted result to record |
 | --- | --- |
 | Verification date/time with timezone | Pending |
 | Device model | Pending |
 | Android version | Pending |
-| EAS build identifier and app version | Pending |
+| EAS build identifier and app version | `c706c880-69bd-4e7d-916e-16dac0171c61`, `0.1.0` (version code `1`) |
 | Package name | `com.householdtool.mobile.staging` |
 | Signing certificate fingerprint matches deployed association | Pending PASS/FAIL |
 | Domain verification from `adb shell pm get-app-links` | Pending PASS/FAIL; record only domain and state |
@@ -36,8 +39,8 @@ keystore and must finish before an APK or signed-build result can be recorded.
 | Valid-shaped, missing, malformed, extra-query, fragment, and unsupported-path browser fallbacks | Live HTTP checks PASS; physical browser check Pending PASS/FAIL for each case |
 | Live `npm run verify:invitation-deployment` | PASS: association and all 11 fallback checks passed on 2026-09-21 UTC |
 
-Before testing, wait for the EAS build to finish and download its APK. On a
-physical device, install that APK fresh, authorize USB debugging, and check
+Before testing, install the completed APK from the EAS artifact on a physical
+device, authorize USB debugging, and check
 the model and OS version with `adb shell getprop`. Request domain verification
 with `adb shell pm verify-app-links --re-verify
 com.householdtool.mobile.staging`, then inspect `adb shell pm get-app-links
